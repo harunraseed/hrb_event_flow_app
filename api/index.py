@@ -9,20 +9,13 @@ try:
     app = application
 except ImportError as e:
     print(f"Import error: {e}")
-    # Fallback for development
-    from flask import Flask
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def hello():
-        return 'Import Error - Check logs'
     # Fallback: create a simple app
     from flask import Flask
     app = Flask(__name__)
     
     @app.route('/')
     def hello():
-        return "Hello from Vercel! Import error occurred."
+        return f"Import Error: {str(e)}"
 
 # Vercel expects this exact export
 application = app
