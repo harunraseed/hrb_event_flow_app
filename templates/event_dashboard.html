@@ -11,8 +11,9 @@
     <div class="col-md-4 text-end">
         <div class="btn-group" role="group">
             <a href="{{ url_for('index') }}" class="btn btn-outline-primary">🏠 Home</a>
-            <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-info">� Upload CSV</a>
+            <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-info">📤 Upload CSV</a>
             <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-success">📥 Export CSV</a>
+            <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-warning">🏆 Certificates</a>
         </div>
     </div>
 </div>
@@ -71,6 +72,7 @@
         <div class="btn-group" role="group">
             <button type="button" class="btn btn-outline-primary btn-sm" onclick="toggleSelectAll()">Select All</button>
             <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning btn-sm" onclick="return confirmBulkAction('send tickets to')">📧 Send Tickets to All</button>
+            <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-success btn-sm">🏆 Manage Certificates</a>
             <button type="submit" formaction="{{ url_for('bulk_resend_tickets') }}" class="btn btn-info btn-sm" onclick="return confirmBulkAction('resend tickets to')">📧 Resend to Selected</button>
             <button type="submit" formaction="{{ url_for('bulk_delete_participants') }}" class="btn btn-danger btn-sm" onclick="return confirmBulkAction('delete')">🗑️ Delete Selected</button>
         </div>

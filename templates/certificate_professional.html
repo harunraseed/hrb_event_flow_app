@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate - {{ participant.name }}</title>
+    <style>
+        /* Use web-safe fonts for PDF generation */
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+        
+        /* Certificate Number Watermark */
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 3rem;
+            color: rgba(0, 120, 212, 0.1);
+            font-weight: bold;
+            z-index: 1;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        
+        .certificate-container {
+            background: white;
+            border: 3px solid #0078d4;
+            border-radius: 8px;
+            max-width: 1000px;
+            width: 100%;
+            min-height: 700px;
+            position: relative;
+            z-index: 2;
+            padding: 0;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .certificate-content {
+            padding: 40px 60px;
+            text-align: center;
+            position: relative;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 700px;
+        }
+        
+        /* Header with logos only */
+        .certificate-header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e5e5e5;
+            padding-bottom: 20px;
+        }
+        
+        .logos-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 40px;
+            margin-bottom: 25px;
+            margin-top: -2px;
+            padding: 0 20px;
+            flex-wrap: wrap;
+        }
+        
+        .logo {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        
+        /* Microsoft Certificate Colors and Typography */
+        .certificate-title {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 2.8rem;
+            font-weight: 300;
+            color: #0078d4;
+            margin: 20px 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+        
+        .certificate-subtitle {
+            font-size: 1.4rem;
+            color: #323130;
+            margin-bottom: 30px;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* Microsoft-style participant name */
+        .participant-section {
+            margin: 40px 0;
+        }
+        
+        .participant-label {
+            font-size: 1.1rem;
+            color: #605e5c;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .participant-name {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 3.5rem;
+            font-weight: 300;
+            color: #323130;
+            margin: 0 0 15px 0;
+            position: relative;
+            display: inline-block;
+            border-bottom: 3px solid #0078d4;
+            padding-bottom: 10px;
+        }
+        
+        /* Certificate description */
+        .certificate-description {
+            font-size: 1.2rem;
+            line-height: 1.8;
+            color: #323130;
+            max-width: 800px;
+            margin: 40px auto;
+            font-weight: 400;
+        }
+        
+        .event-highlight {
+            font-weight: 600;
+            color: #0078d4;
+        }
+        
+        .organizer-highlight {
+            font-weight: 600;
+            color: #107c10;
+        }
+        
+        .location-highlight {
+            font-weight: 500;
+            color: #5c2d91;
+        }
+        
+        /* Signatures section - Microsoft style */
+        .certificate-footer {
+            margin-top: auto;
+            border-top: 1px solid #e5e5e5;
+            padding-top: 30px;
+        }
+        
+        .signatures-section {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            margin: 30px 0;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+        
+        .signature-item {
+            text-align: center;
+            min-width: 200px;
+            flex: 1;
+        }
+        
+        .signature-image {
+            width: 160px;
+            height: 80px;
+            object-fit: contain;
+            margin-bottom: 10px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .signature-line {
+            border-top: 2px solid #323130;
+            margin: 15px auto;
+            width: 180px;
+        }
+        
+        .signature-name {
+            font-weight: 600;
+            color: #323130;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+        
+        .signature-title {
+            color: #605e5c;
+            font-size: 0.95rem;
+            font-style: normal;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Certificate details footer */
+        .certificate-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            font-size: 0.9rem;
+            color: #605e5c;
+            flex-wrap: wrap;
+            gap: 20px;
+            border-top: 1px solid #e5e5e5;
+            margin-top: 20px;
+        }
+        
+        .certificate-number {
+            font-weight: 600;
+            color: #0078d4;
+        }
+        
+        .certificate-date {
+            font-weight: 600;
+            color: #0078d4;
+        }
+        
+        /* Microsoft-style corner accents */
+        .corner-accent {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+        }
+        
+        .corner-accent.top-left {
+            top: 15px;
+            left: 15px;
+            border-top: 4px solid #0078d4;
+            border-left: 4px solid #0078d4;
+        }
+        
+        .corner-accent.top-right {
+            top: 15px;
+            right: 15px;
+            border-top: 4px solid #0078d4;
+            border-right: 4px solid #0078d4;
+        }
+        
+        .corner-accent.bottom-left {
+            bottom: 15px;
+            left: 15px;
+            border-bottom: 4px solid #0078d4;
+            border-left: 4px solid #0078d4;
+        }
+        
+        .corner-accent.bottom-right {
+            bottom: 15px;
+            right: 15px;
+            border-bottom: 4px solid #0078d4;
+            border-right: 4px solid #0078d4;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .certificate-container {
+                min-height: auto;
+            }
+            
+            .certificate-content {
+                padding: 30px 20px;
+                min-height: auto;
+            }
+            
+            .certificate-title {
+                font-size: 2.2rem;
+            }
+            
+            .participant-name {
+                font-size: 2.8rem;
+            }
+            
+            .logos-section {
+                flex-direction: column;
+                gap: 20px;
+                padding: 0 15px;
+                margin-top: -1px;
+            }
+            
+            .logo {
+                width: 80px;
+                height: 80px;
+            }
+            
+            .signatures-section {
+                flex-direction: column;
+                gap: 30px;
+            }
+            
+            .certificate-details {
+                flex-direction: column;
+                text-align: center;
+                gap: 10px;
+            }
+        }
+        
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            
+            .certificate-container {
+                box-shadow: none;
+                border: 2px solid #0078d4;
+                max-width: none;
+                width: 100%;
+            }
+            
+            .watermark {
+                position: absolute;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Certificate Number Watermark -->
+    <div class="watermark">{{ certificate.certificate_number }}</div>
+    
+    <div class="certificate-container">
+        <!-- Corner accents -->
+        <div class="corner-accent top-left"></div>
+        <div class="corner-accent top-right"></div>
+        <div class="corner-accent bottom-left"></div>
+        <div class="corner-accent bottom-right"></div>
+        
+        <div class="certificate-content">
+            <div class="certificate-header">
+                <!-- Logos only at top -->
+                <div class="logos-section">
+                    {% if certificate.organizer_logo_url %}
+                    <img src="{{ certificate.organizer_logo_url }}" alt="Organizer Logo" class="logo">
+                    {% endif %}
+                    
+                    {% if certificate.sponsor_logo_url %}
+                    <img src="{{ certificate.sponsor_logo_url }}" alt="Sponsor Logo" class="logo">
+                    {% endif %}
+                </div>
+                
+                <h1 class="certificate-title">Certificate</h1>
+                <p class="certificate-subtitle">of {{ certificate.certificate_type|title or 'Participation' }}</p>
+            </div>
+            
+            <div class="certificate-body">
+                <div class="participant-section">
+                    <p class="participant-label">This is to certify that</p>
+                    <h2 class="participant-name">{{ participant.name }}</h2>
+                </div>
+                
+                <p class="certificate-description">
+                    has successfully 
+                    {% if certificate.certificate_type == 'completion' %}
+                    <span class="event-highlight">completed</span>
+                    {% elif certificate.certificate_type == 'achievement' %}
+                    <span class="event-highlight">achieved excellence in</span>
+                    {% else %}
+                    <span class="event-highlight">participated in</span>
+                    {% endif %}
+                    the event "<span class="event-highlight">{{ event.name }}</span>"<br>
+                    organized by <span class="organizer-highlight">{{ certificate.organizer_name or 'Azure Developer Community Tamilnadu' }}</span>
+                    {% if certificate.event_location %}
+                    <br>at <span class="location-highlight">{{ certificate.event_location }}</span>
+                    {% endif %}
+                    {% if event.date %}
+                    <br>on <span class="event-highlight">{{ event.date.strftime('%B %d, %Y') }}</span>
+                    {% endif %}.
+                    {% if certificate.event_theme %}
+                    <br>This event focused on <span class="event-highlight">{{ certificate.event_theme }}</span>.
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div class="certificate-footer">
+                <div class="signatures-section">
+                    <!-- Signature 1 -->
+                    <div class="signature-item">
+                        {% if certificate.signature1_image_url %}
+                        <img src="{{ certificate.signature1_image_url }}" alt="Signature 1" class="signature-image">
+                        {% endif %}
+                        <div class="signature-line"></div>
+                        <div class="signature-name">{{ certificate.signature1_name or 'Authorized Signatory' }}</div>
+                        <div class="signature-title">{{ certificate.signature1_title or 'Microsoft MVP' }}</div>
+                    </div>
+                    
+                    <!-- Signature 2 -->
+                    <div class="signature-item">
+                        {% if certificate.signature2_image_url %}
+                        <img src="{{ certificate.signature2_image_url }}" alt="Signature 2" class="signature-image">
+                        {% endif %}
+                        <div class="signature-line"></div>
+                        <div class="signature-name">{{ certificate.signature2_name or 'Event Organizer' }}</div>
+                        <div class="signature-title">{{ certificate.signature2_title or 'Microsoft MVP' }}</div>
+                    </div>
+                </div>
+                
+                <div class="certificate-details">
+                    <div class="certificate-number">Certificate No: {{ certificate.certificate_number }}</div>
+                    <div class="certificate-date">Issued: {{ certificate.issued_date.strftime('%B %d, %Y') }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField
+from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField, SelectField
 from wtforms.validators import DataRequired, Length, Optional, URL, Email
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -14,6 +14,8 @@ import io
 import base64
 from uuid import uuid4
 from utils.storage import storage_manager
+import tempfile
+import pdfkit
 
 load_dotenv()
 
@@ -114,6 +116,53 @@ class EditParticipantForm(FlaskForm):
     checked_in = BooleanField('Checked In')
     submit = SubmitField('Update Participant')
 
+class CertificateConfigForm(FlaskForm):
+    # Basic certificate settings
+    certificate_type = SelectField('Certificate Type', 
+                                 choices=[('participation', 'Participation'), 
+                                         ('completion', 'Completion'), 
+                                         ('achievement', 'Achievement')],
+                                 default='participation')
+    
+    # Organization details
+    organizer_name = StringField('Organizer Name', validators=[Optional(), Length(max=200)],
+                                default='Azure Developer Community Tamilnadu')
+    sponsor_name = StringField('Sponsor Name', validators=[Optional(), Length(max=200)],
+                              default='Microsoft')
+    event_location = StringField('Event Location', validators=[Optional(), Length(max=200)])
+    event_theme = StringField('Event Theme', validators=[Optional(), Length(max=500)],
+                             default='advanced technologies and innovation')
+    
+    # Logo uploads and URLs
+    organizer_logo_file = FileField('Organizer Logo Upload', 
+                                   validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    organizer_logo_url = StringField('Organizer Logo URL', validators=[Optional(), URL(), Length(max=500)])
+    
+    sponsor_logo_file = FileField('Sponsor Logo Upload', 
+                                 validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    sponsor_logo_url = StringField('Sponsor Logo URL', validators=[Optional(), URL(), Length(max=500)])
+    
+    # Signature 1 details
+    signature1_name = StringField('First Signatory Name', validators=[Optional(), Length(max=200)])
+    signature1_title = StringField('First Signatory Title', validators=[Optional(), Length(max=200)],
+                                  default='Organizer')
+    signature1_file = FileField('First Signature Upload', 
+                               validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    signature1_image_url = StringField('First Signature URL', validators=[Optional(), URL(), Length(max=500)])
+    
+    # Signature 2 details
+    signature2_name = StringField('Second Signatory Name', validators=[Optional(), Length(max=200)])
+    signature2_title = StringField('Second Signatory Title', validators=[Optional(), Length(max=200)],
+                                  default='Event Lead')
+    signature2_file = FileField('Second Signature Upload', 
+                               validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    signature2_image_url = StringField('Second Signature URL', validators=[Optional(), URL(), Length(max=500)])
+    
+    # Settings
+    send_to_all_checked_in = BooleanField('Send to all checked-in participants', default=True)
+    
+    submit = SubmitField('Save Configuration')
+
 # Database Models
 class Event(db.Model):
     __tablename__ = 'events'
@@ -165,6 +214,93 @@ class Participant(db.Model):
     def __repr__(self):
         return f'<Participant {self.name}>'
 
+# Certificate model
+class Certificate(db.Model):
+    __tablename__ = 'certificates'
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False)
+    participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=False)
+    
+    # Certificate details
+    certificate_number = db.Column(db.String(100), unique=True, nullable=False)
+    certificate_type = db.Column(db.String(50), default='participation')  # participation, completion, achievement
+    
+    # Organizer and event details
+    organizer_name = db.Column(db.String(200))
+    sponsor_name = db.Column(db.String(200))
+    event_location = db.Column(db.String(200))
+    event_theme = db.Column(db.String(500))
+    
+    # Logo URLs
+    organizer_logo_url = db.Column(db.String(500))
+    sponsor_logo_url = db.Column(db.String(500))
+    
+    # Signature details
+    signature1_name = db.Column(db.String(200))
+    signature1_title = db.Column(db.String(200))
+    signature1_image_url = db.Column(db.String(500))
+    
+    signature2_name = db.Column(db.String(200))
+    signature2_title = db.Column(db.String(200))
+    signature2_image_url = db.Column(db.String(500))
+    
+    # Timestamps
+    issued_date = db.Column(db.DateTime, default=datetime.utcnow)
+    email_sent = db.Column(db.Boolean, default=False)
+    email_sent_date = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    event = db.relationship('Event', backref='certificates')
+    participant = db.relationship('Participant', backref='certificates')
+    
+    def __repr__(self):
+        return f'<Certificate {self.certificate_number}>'
+
+# Certificate Configuration model (one per event)
+class CertificateConfig(db.Model):
+    __tablename__ = 'certificate_configs'
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False, unique=True)
+    
+    # Configuration details
+    certificate_type = db.Column(db.String(50), default='participation')
+    organizer_name = db.Column(db.String(200))
+    sponsor_name = db.Column(db.String(200))
+    event_location = db.Column(db.String(200))
+    event_theme = db.Column(db.String(500))
+    
+    # Logo URLs
+    organizer_logo_url = db.Column(db.String(500))
+    sponsor_logo_url = db.Column(db.String(500))
+    
+    # Signature details
+    signature1_name = db.Column(db.String(200))
+    signature1_title = db.Column(db.String(200))
+    signature1_image_url = db.Column(db.String(500))
+    
+    signature2_name = db.Column(db.String(200))
+    signature2_title = db.Column(db.String(200))
+    signature2_image_url = db.Column(db.String(500))
+    
+    # Settings
+    send_to_all_checked_in = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    event = db.relationship('Event', backref=db.backref('certificate_config', uselist=False))
+    
+    def __repr__(self):
+        return f'<CertificateConfig for {self.event.name}>'
+
+# Add property to Event model for certificate status
+@property
+def has_certificate_config(self):
+    return self.certificate_config is not None
+
+Event.has_certificate_config = has_certificate_config
+
 # Favicon routes - prevent 404 errors
 @app.route('/favicon.ico')
 @app.route('/favicon.png')
@@ -178,6 +314,19 @@ def logo_url_filter(logo_url):
     if logo_url:
         return logo_url
     return None
+
+# Debug endpoint for checking storage configuration
+@app.route('/debug/storage')
+def debug_storage():
+    """Debug endpoint to check storage configuration"""
+    debug_info = {
+        'github_repo': storage_manager.github_repo,
+        'github_branch': storage_manager.github_branch,
+        'github_token_set': bool(storage_manager.github_token),
+        'github_token_length': len(storage_manager.github_token) if storage_manager.github_token else 0,
+        'storage_type': storage_manager.storage_type
+    }
+    return f"<pre>{str(debug_info)}</pre>"
 
 # Routes
 @app.route('/')
@@ -198,13 +347,23 @@ def create_event():
             # Handle logo upload using storage manager
             logo_url = None
             if form.logo.data:
+                print(f"🔄 Processing logo upload for file: {form.logo.data.filename}")
+                print(f"📊 GitHub Token Available: {bool(storage_manager.github_token)}")
+                print(f"📁 Target Repository: {storage_manager.github_repo}")
                 try:
                     logo_url = storage_manager.save_image(form.logo.data, folder="logos")
-                    if not logo_url:
+                    if logo_url:
+                        print(f"✅ Logo uploaded successfully: {logo_url}")
+                        flash(f'Logo uploaded successfully to: {logo_url}', 'success')
+                    else:
+                        print("❌ Logo upload failed - no URL returned")
                         flash('Error uploading logo. Event created without logo.', 'warning')
                 except Exception as e:
+                    print(f"❌ Exception during logo upload: {str(e)}")
                     flash(f'Error processing logo: {str(e)}', 'warning')
                     logo_url = None
+            else:
+                print("ℹ️ No logo file provided")
             
             # Create event with all fields
             event = Event(
@@ -733,6 +892,384 @@ def add_participant(event_id):
 def send_emails_alt(event_id):
     """Send emails to all participants (alternative route called by template)."""
     return redirect(url_for('send_emails', event_id=event_id))
+
+# Certificate Routes
+@app.route('/event/<int:event_id>/certificates')
+def certificate_preview_page(event_id):
+    """Certificate preview and configuration page"""
+    event = Event.query.get_or_404(event_id)
+    
+    # Get or create certificate configuration
+    cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+    
+    # Initialize form with existing data
+    form = CertificateConfigForm()
+    if cert_config:
+        form.certificate_type.data = cert_config.certificate_type
+        form.organizer_name.data = cert_config.organizer_name
+        form.sponsor_name.data = cert_config.sponsor_name
+        form.event_location.data = cert_config.event_location
+        form.event_theme.data = cert_config.event_theme
+        form.organizer_logo_url.data = cert_config.organizer_logo_url
+        form.sponsor_logo_url.data = cert_config.sponsor_logo_url
+        form.signature1_name.data = cert_config.signature1_name
+        form.signature1_title.data = cert_config.signature1_title
+        form.signature1_image_url.data = cert_config.signature1_image_url
+        form.signature2_name.data = cert_config.signature2_name
+        form.signature2_title.data = cert_config.signature2_title
+        form.signature2_image_url.data = cert_config.signature2_image_url
+        form.send_to_all_checked_in.data = cert_config.send_to_all_checked_in
+    
+    # Get participant statistics
+    participants = Participant.query.filter_by(event_id=event_id).all()
+    total_participants = len(participants)
+    checked_in_participants = [p for p in participants if p.checked_in]
+    checked_in_count = len(checked_in_participants)
+    
+    # Certificates already issued
+    already_issued = Certificate.query.filter_by(event_id=event_id).count()
+    
+    # Eligible for certificate (checked in but not yet issued)
+    issued_participant_ids = {c.participant_id for c in Certificate.query.filter_by(event_id=event_id).all()}
+    eligible_participants = [p for p in checked_in_participants if p.id not in issued_participant_ids]
+    eligible_for_certificate = len(eligible_participants)
+    
+    return render_template('certificate_preview.html',
+                         event=event,
+                         form=form,
+                         total_participants=total_participants,
+                         checked_in_count=checked_in_count,
+                         eligible_for_certificate=eligible_for_certificate,
+                         already_issued=already_issued,
+                         eligible_participants=eligible_participants)
+
+@app.route('/event/<int:event_id>/certificates/save', methods=['POST'])
+def save_certificate_config(event_id):
+    """Save certificate configuration"""
+    event = Event.query.get_or_404(event_id)
+    form = CertificateConfigForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Get or create certificate configuration
+            cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+            if not cert_config:
+                cert_config = CertificateConfig(event_id=event_id)
+                db.session.add(cert_config)
+            
+            # Update basic fields
+            cert_config.certificate_type = form.certificate_type.data
+            cert_config.organizer_name = form.organizer_name.data
+            cert_config.sponsor_name = form.sponsor_name.data
+            cert_config.event_location = form.event_location.data
+            cert_config.event_theme = form.event_theme.data
+            cert_config.send_to_all_checked_in = form.send_to_all_checked_in.data
+            
+            # Handle logo uploads
+            if form.organizer_logo_file.data:
+                logo_url = storage_manager.save_image(form.organizer_logo_file.data, folder="certificates/logos")
+                if logo_url:
+                    cert_config.organizer_logo_url = logo_url
+            elif form.organizer_logo_url.data:
+                cert_config.organizer_logo_url = form.organizer_logo_url.data
+            
+            if form.sponsor_logo_file.data:
+                logo_url = storage_manager.save_image(form.sponsor_logo_file.data, folder="certificates/logos")
+                if logo_url:
+                    cert_config.sponsor_logo_url = logo_url
+            elif form.sponsor_logo_url.data:
+                cert_config.sponsor_logo_url = form.sponsor_logo_url.data
+            
+            # Handle signature uploads
+            if form.signature1_file.data:
+                sig_url = storage_manager.save_image(form.signature1_file.data, folder="certificates/signatures")
+                if sig_url:
+                    cert_config.signature1_image_url = sig_url
+            elif form.signature1_image_url.data:
+                cert_config.signature1_image_url = form.signature1_image_url.data
+                
+            cert_config.signature1_name = form.signature1_name.data
+            cert_config.signature1_title = form.signature1_title.data
+            
+            if form.signature2_file.data:
+                sig_url = storage_manager.save_image(form.signature2_file.data, folder="certificates/signatures")
+                if sig_url:
+                    cert_config.signature2_image_url = sig_url
+            elif form.signature2_image_url.data:
+                cert_config.signature2_image_url = form.signature2_image_url.data
+                
+            cert_config.signature2_name = form.signature2_name.data
+            cert_config.signature2_title = form.signature2_title.data
+            
+            # Update timestamp
+            cert_config.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            flash('Certificate configuration saved successfully!', 'success')
+            return jsonify({'status': 'success', 'message': 'Configuration saved successfully!'})
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error saving certificate config: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error: {str(e)}'}), 500
+    else:
+        errors = []
+        for field, field_errors in form.errors.items():
+            for error in field_errors:
+                errors.append(f"{field}: {error}")
+        return jsonify({'status': 'error', 'message': f'Validation errors: {", ".join(errors)}'}), 400
+
+@app.route('/event/<int:event_id>/certificates/preview')
+def preview_certificate(event_id):
+    """Preview certificate template"""
+    event = Event.query.get_or_404(event_id)
+    cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+    
+    if not cert_config:
+        flash('Please configure the certificate first.', 'warning')
+        return redirect(url_for('certificate_preview_page', event_id=event_id))
+    
+    # Get a sample participant (first checked-in participant or create dummy)
+    sample_participant = Participant.query.filter_by(event_id=event_id, checked_in=True).first()
+    if not sample_participant:
+        sample_participant = Participant(
+            name="John Doe",
+            email="john.doe@example.com",
+            event_id=event_id,
+            ticket_number="SAMPLE-001",
+            checked_in=True
+        )
+    
+    # Create a sample certificate object
+    sample_certificate = Certificate(
+        certificate_number=f"CERT-{event.id}-SAMPLE-{datetime.utcnow().strftime('%Y%m%d')}",
+        certificate_type=cert_config.certificate_type,
+        organizer_name=cert_config.organizer_name,
+        sponsor_name=cert_config.sponsor_name,
+        event_location=cert_config.event_location,
+        event_theme=cert_config.event_theme,
+        organizer_logo_url=cert_config.organizer_logo_url,
+        sponsor_logo_url=cert_config.sponsor_logo_url,
+        signature1_name=cert_config.signature1_name,
+        signature1_title=cert_config.signature1_title,
+        signature1_image_url=cert_config.signature1_image_url,
+        signature2_name=cert_config.signature2_name,
+        signature2_title=cert_config.signature2_title,
+        signature2_image_url=cert_config.signature2_image_url,
+        issued_date=datetime.utcnow()
+    )
+    
+    return render_template('certificate_professional.html',
+                         event=event,
+                         participant=sample_participant,
+                         certificate=sample_certificate)
+
+@app.route('/participant/<int:participant_id>/certificate/preview')
+def preview_single_certificate(participant_id):
+    """Preview certificate for a specific participant"""
+    participant = Participant.query.get_or_404(participant_id)
+    event = participant.event
+    cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+    
+    if not cert_config:
+        flash('Certificate configuration not found.', 'error')
+        return redirect(url_for('certificate_preview_page', event_id=event.id))
+    
+    # Create certificate object for this participant
+    sample_certificate = Certificate(
+        certificate_number=f"CERT-{event.id}-{participant.id}-{datetime.utcnow().strftime('%Y%m%d')}",
+        certificate_type=cert_config.certificate_type,
+        organizer_name=cert_config.organizer_name,
+        sponsor_name=cert_config.sponsor_name,
+        event_location=cert_config.event_location,
+        event_theme=cert_config.event_theme,
+        organizer_logo_url=cert_config.organizer_logo_url,
+        sponsor_logo_url=cert_config.sponsor_logo_url,
+        signature1_name=cert_config.signature1_name,
+        signature1_title=cert_config.signature1_title,
+        signature1_image_url=cert_config.signature1_image_url,
+        signature2_name=cert_config.signature2_name,
+        signature2_title=cert_config.signature2_title,
+        signature2_image_url=cert_config.signature2_image_url,
+        issued_date=datetime.utcnow()
+    )
+    
+    return render_template('certificate_professional.html',
+                         event=event,
+                         participant=participant,
+                         certificate=sample_certificate)
+
+@app.route('/event/<int:event_id>/certificates/generate', methods=['POST'])
+def generate_certificates(event_id):
+    """Generate and send certificates to eligible participants"""
+    event = Event.query.get_or_404(event_id)
+    cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+    
+    if not cert_config:
+        flash('Please configure the certificate first.', 'error')
+        return redirect(url_for('certificate_preview_page', event_id=event_id))
+    
+    try:
+        # Get eligible participants (checked in but no certificate issued)
+        participants = Participant.query.filter_by(event_id=event_id, checked_in=True).all()
+        issued_participant_ids = {c.participant_id for c in Certificate.query.filter_by(event_id=event_id).all()}
+        eligible_participants = [p for p in participants if p.id not in issued_participant_ids]
+        
+        if not eligible_participants:
+            flash('No eligible participants found for certificates.', 'warning')
+            return redirect(url_for('certificate_preview_page', event_id=event_id))
+        
+        success_count = 0
+        error_count = 0
+        
+        for participant in eligible_participants:
+            try:
+                # Generate certificate
+                certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                
+                # Create certificate record
+                certificate = Certificate(
+                    event_id=event_id,
+                    participant_id=participant.id,
+                    certificate_number=certificate_number,
+                    certificate_type=cert_config.certificate_type,
+                    organizer_name=cert_config.organizer_name,
+                    sponsor_name=cert_config.sponsor_name,
+                    event_location=cert_config.event_location,
+                    event_theme=cert_config.event_theme,
+                    organizer_logo_url=cert_config.organizer_logo_url,
+                    sponsor_logo_url=cert_config.sponsor_logo_url,
+                    signature1_name=cert_config.signature1_name,
+                    signature1_title=cert_config.signature1_title,
+                    signature1_image_url=cert_config.signature1_image_url,
+                    signature2_name=cert_config.signature2_name,
+                    signature2_title=cert_config.signature2_title,
+                    signature2_image_url=cert_config.signature2_image_url,
+                    issued_date=datetime.utcnow()
+                )
+                
+                db.session.add(certificate)
+                db.session.commit()
+                
+                # Send certificate email (with PDF attachment - to be implemented)
+                send_certificate_email(participant, event, certificate)
+                
+                success_count += 1
+                print(f"✓ Certificate generated and sent to {participant.name}")
+                
+            except Exception as e:
+                print(f"❌ Error generating certificate for {participant.name}: {str(e)}")
+                error_count += 1
+        
+        if success_count > 0:
+            flash(f'✅ Successfully generated and sent {success_count} certificates!', 'success')
+        if error_count > 0:
+            flash(f'❌ {error_count} certificates failed to generate.', 'error')
+            
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in certificate generation: {str(e)}")
+        flash(f'Error generating certificates: {str(e)}', 'error')
+    
+    return redirect(url_for('certificate_preview_page', event_id=event_id))
+
+def send_certificate_email(participant, event, certificate):
+    """Send certificate email with PDF attachment"""
+    try:
+        # Create certificate email
+        subject = f"🏆 Your Certificate - {event.name}"
+        
+        # Render email template
+        email_html = render_template('email/certificate_email.html',
+                                   event=event,
+                                   participant=participant,
+                                   certificate=certificate)
+        
+        # Create email message
+        msg = Message(
+            subject=subject,
+            sender=app.config['MAIL_USERNAME'],
+            recipients=[participant.email],
+            html=email_html
+        )
+        
+        # Generate PDF certificate
+        try:
+            pdf_data = generate_certificate_pdf(participant, event, certificate)
+            if pdf_data:
+                filename = f"Certificate_{participant.name.replace(' ', '_')}_{event.name.replace(' ', '_')}.pdf"
+                msg.attach(filename, "application/pdf", pdf_data)
+                print(f"✅ PDF certificate attached: {filename}")
+            else:
+                print("⚠️ PDF generation failed, sending email without attachment")
+        except Exception as pdf_error:
+            print(f"⚠️ PDF generation error: {str(pdf_error)}, sending email without attachment")
+        
+        print(f"🔄 Sending certificate email to {participant.email}")
+        
+        mail.send(msg)
+        
+        # Update certificate record
+        certificate.email_sent = True
+        certificate.email_sent_date = datetime.utcnow()
+        db.session.commit()
+        
+        print(f"✅ Certificate email sent successfully to {participant.email}")
+        
+    except Exception as e:
+        print(f"❌ Error sending certificate email to {participant.email}: {str(e)}")
+        raise e
+
+def generate_certificate_pdf(participant, event, certificate):
+    """Generate PDF certificate from HTML template"""
+    try:
+        # Render the certificate HTML
+        certificate_html = render_template('certificate_professional.html',
+                                         event=event,
+                                         participant=participant,
+                                         certificate=certificate)
+        
+        # PDF options for better quality
+        options = {
+            'page-size': 'A4',
+            'orientation': 'Landscape',
+            'margin-top': '0.75in',
+            'margin-right': '0.75in',
+            'margin-bottom': '0.75in',
+            'margin-left': '0.75in',
+            'encoding': "UTF-8",
+            'no-outline': None,
+            'enable-local-file-access': None,
+            'print-media-type': None,
+            'disable-smart-shrinking': None,
+        }
+        
+        # Try to generate PDF using pdfkit
+        try:
+            pdf_data = pdfkit.from_string(certificate_html, False, options=options)
+            print(f"✅ PDF generated using pdfkit for {participant.name}")
+            return pdf_data
+        except Exception as pdfkit_error:
+            print(f"⚠️ pdfkit failed: {str(pdfkit_error)}")
+            
+            # Fallback: Try using WeasyPrint if available
+            try:
+                import weasyprint
+                pdf = weasyprint.HTML(string=certificate_html).write_pdf()
+                print(f"✅ PDF generated using WeasyPrint for {participant.name}")
+                return pdf
+            except ImportError:
+                print("⚠️ WeasyPrint not available")
+            except Exception as weasy_error:
+                print(f"⚠️ WeasyPrint failed: {str(weasy_error)}")
+            
+            # Final fallback: Return None (email will be sent without attachment)
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error generating PDF certificate: {str(e)}")
+        return None
 
 # Initialize database on startup
 with app.app_context():
