@@ -1,0 +1,31 @@
+﻿<!-- upload_participants.html -->
+{% extends "base.html" %}
+{% block title %}Upload Participants - Event Ticketing{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2>Upload Participants - {{ event.name }}</h2>
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5>CSV Format Required</h5>
+                <p>Your CSV file must have these columns:</p>
+                <table class="table table-sm">
+                    <tr><td><strong>name</strong></td><td>Participant name</td></tr>
+                    <tr><td><strong>email</strong></td><td>Participant email</td></tr>
+                </table>
+                <p><small class="text-muted">Example:</small></p>
+                <pre>name,email
+John Doe,john@example.com
+Jane Smith,jane@example.com</pre>
+            </div>
+        </div>
+        <form method="POST" enctype="multipart/form-data" class="mt-4">
+            <div class="mb-3">
+                <label for="file" class="form-label">Select CSV File</label>
+                <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg">Upload Participants</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

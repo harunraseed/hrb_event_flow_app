@@ -1,0 +1,38 @@
+﻿<!-- ticket_email.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #007bff; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; }
+        .ticket { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #007bff; }
+        .ticket-number { font-size: 24px; font-weight: bold; color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>🎫 Your Event Ticket</h2>
+        </div>
+        <div class="content">
+            <p>Hi {{ participant.name }},</p>
+            <p>Thank you for registering for our event!</p>
+            
+            <div class="ticket">
+                <h3>{{ event.name }}</h3>
+                <p><strong>📅 Date:</strong> {{ event.date.strftime('%B %d, %Y') }}</p>
+                <p><strong>🎟️ Your Ticket Number:</strong></p>
+                <p class="ticket-number">{{ participant.ticket_number }}</p>
+                <p><strong>Please present this ticket at the entrance.</strong></p>
+            </div>
+
+            <p>{{ event.description }}</p>
+            
+            <p>If you have any questions, please contact the organizer.</p>
+            <p>Best regards,<br>Event Team</p>
+        </div>
+    </div>
+</body>
+</html>
