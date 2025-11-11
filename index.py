@@ -1,5 +1,5 @@
 ﻿import os
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
@@ -90,10 +90,10 @@ def send_ticket_email(participant, event):
         
         # Send email
         mail.send(msg)
-        print(f"✅ Email sent successfully to {participant.email}")
+        print(f"? Email sent successfully to {participant.email}")
         
     except Exception as e:
-        print(f"❌ Failed to send email to {participant.email}: {str(e)}")
+        print(f"? Failed to send email to {participant.email}: {str(e)}")
         raise e
 
 # WTForms
@@ -177,7 +177,7 @@ class Event(db.Model):
     description = db.Column(db.Text)
     organizer_name = db.Column(db.String(200))  # Organizer name
     instructions = db.Column(db.Text)  # Detailed instructions
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     participants = db.relationship('Participant', backref='event', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
@@ -209,7 +209,7 @@ class Participant(db.Model):
     ticket_number = db.Column(db.String(50), unique=True, nullable=False)
     checked_in = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f'<Participant {self.name}>'
@@ -245,14 +245,14 @@ class Certificate(db.Model):
     signature2_image_url = db.Column(db.String(500))
     
     # Timestamps
-    issued_date = db.Column(db.DateTime, default=datetime.utcnow)
+    issued_date = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     email_sent = db.Column(db.Boolean, default=False)
     email_sent_date = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     event = db.relationship('Event', backref='certificates')
-    participant = db.relationship('Participant', backref='certificates')
+    participant = db.relationship('Participant', backref=db.backref('certificates', cascade='all, delete-orphan'))
     
     def __repr__(self):
         return f'<Certificate {self.certificate_number}>'
@@ -285,8 +285,8 @@ class CertificateConfig(db.Model):
     
     # Settings
     send_to_all_checked_in = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationship
     event = db.relationship('Event', backref=db.backref('certificate_config', uselist=False))
@@ -347,23 +347,23 @@ def create_event():
             # Handle logo upload using storage manager
             logo_url = None
             if form.logo.data:
-                print(f"🔄 Processing logo upload for file: {form.logo.data.filename}")
-                print(f"📊 GitHub Token Available: {bool(storage_manager.github_token)}")
-                print(f"📁 Target Repository: {storage_manager.github_repo}")
+                print(f"?? Processing logo upload for file: {form.logo.data.filename}")
+                print(f"?? GitHub Token Available: {bool(storage_manager.github_token)}")
+                print(f"?? Target Repository: {storage_manager.github_repo}")
                 try:
                     logo_url = storage_manager.save_image(form.logo.data, folder="logos")
                     if logo_url:
-                        print(f"✅ Logo uploaded successfully: {logo_url}")
+                        print(f"? Logo uploaded successfully: {logo_url}")
                         flash(f'Logo uploaded successfully to: {logo_url}', 'success')
                     else:
-                        print("❌ Logo upload failed - no URL returned")
+                        print("? Logo upload failed - no URL returned")
                         flash('Error uploading logo. Event created without logo.', 'warning')
                 except Exception as e:
-                    print(f"❌ Exception during logo upload: {str(e)}")
+                    print(f"? Exception during logo upload: {str(e)}")
                     flash(f'Error processing logo: {str(e)}', 'warning')
                     logo_url = None
             else:
-                print("ℹ️ No logo file provided")
+                print("?? No logo file provided")
             
             # Create event with all fields
             event = Event(
@@ -474,6 +474,11 @@ def bulk_delete_participants_alt():
         for pid in participant_ids:
             participant = Participant.query.get(pid)
             if participant:
+                # Delete associated certificates first
+                certificates = Certificate.query.filter_by(participant_id=pid).all()
+                for cert in certificates:
+                    db.session.delete(cert)
+                
                 db.session.delete(participant)
                 deleted_count += 1
         
@@ -564,7 +569,7 @@ def edit_participant(participant_id):
             participant.checked_in = form.checked_in.data
             
             if form.checked_in.data and not participant.checkin_time:
-                participant.checkin_time = datetime.utcnow()
+                participant.checkin_time = datetime.now(timezone.utc)
             elif not form.checked_in.data:
                 participant.checkin_time = None
             
@@ -580,18 +585,18 @@ def edit_participant(participant_id):
 
 @app.route('/participant/<int:participant_id>/checkin', methods=['GET', 'POST'])
 def toggle_checkin(participant_id):
-    print(f"🔍 DEBUG: Check-in route called for participant {participant_id} with method {request.method}")
+    print(f"?? DEBUG: Check-in route called for participant {participant_id} with method {request.method}")
     participant = Participant.query.get_or_404(participant_id)
     
     # If GET request, redirect to dashboard with error message
     if request.method == 'GET':
-        print(f"🔍 DEBUG: GET request detected, redirecting to dashboard")
+        print(f"?? DEBUG: GET request detected, redirecting to dashboard")
         flash('Check-in must be done via button click, not direct URL access.', 'warning')
         return redirect(url_for('event_dashboard', event_id=participant.event_id))
     
     # Handle POST request
     participant.checked_in = not participant.checked_in
-    participant.checkin_time = datetime.utcnow() if participant.checked_in else None
+    participant.checkin_time = datetime.now(timezone.utc) if participant.checked_in else None
     db.session.commit()
     
     status = 'checked in' if participant.checked_in else 'checked out'
@@ -639,10 +644,10 @@ def send_emails(event_id):
             try:
                 send_ticket_email(participant, event)
                 sent_count += 1
-                print(f"✅ Email sent to {participant.email}")
+                print(f"? Email sent to {participant.email}")
             except Exception as e:
                 error_count += 1
-                print(f"❌ Error sending email to {participant.email}: {e}")
+                print(f"? Error sending email to {participant.email}: {e}")
         
         if sent_count > 0:
             flash(f'Emails sent successfully to {sent_count} participants!', 'success')
@@ -686,10 +691,10 @@ def test_single_email(participant_id):
         # Send test email
         send_ticket_email(participant, event)
         
-        flash(f'✅ Test email sent successfully to {participant.email}!', 'success')
+        flash(f'? Test email sent successfully to {participant.email}!', 'success')
     except Exception as e:
         print(f"Single email test failed: {str(e)}")
-        flash(f'❌ Test email failed: {str(e)}', 'error')
+        flash(f'? Test email failed: {str(e)}', 'error')
     
     return redirect(url_for('event_dashboard', event_id=event.id))
 
@@ -748,17 +753,22 @@ def delete_participant(participant_id):
     participant_name = participant.name
     
     try:
+        # Delete associated certificates first
+        certificates = Certificate.query.filter_by(participant_id=participant_id).all()
+        for cert in certificates:
+            db.session.delete(cert)
+        
         # Delete participant
         db.session.delete(participant)
         db.session.commit()
         
         flash(f'Successfully deleted participant: {participant_name}', 'success')
-        print(f"✓ Deleted participant {participant_name} (ID: {participant_id})")
+        print(f"? Deleted participant {participant_name} (ID: {participant_id}) and {len(certificates)} certificates")
         
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting participant: {str(e)}', 'error')
-        print(f"❌ Error deleting participant {participant_id}: {str(e)}")
+        print(f"? Error deleting participant {participant_id}: {str(e)}")
     
     return redirect(url_for('event_dashboard', event_id=event_id))
 
@@ -771,9 +781,9 @@ def resend_ticket(participant_id):
     try:
         send_ticket_email(participant, event)
         flash(f'Ticket resent successfully to {participant.email}!', 'success')
-        print(f"✓ Ticket resent to participant {participant.email}")
+        print(f"? Ticket resent to participant {participant.email}")
     except Exception as e:
-        print(f"❌ Failed to resend ticket: {str(e)}")
+        print(f"? Failed to resend ticket: {str(e)}")
         flash(f'Failed to resend ticket to {participant.email}: {str(e)}', 'error')
     
     return redirect(url_for('event_dashboard', event_id=event.id))
@@ -798,7 +808,7 @@ def bulk_resend_tickets():
                 success_count += 1
         except Exception as e:
             error_count += 1
-            print(f"❌ Failed to resend ticket to participant {participant_id}: {str(e)}")
+            print(f"? Failed to resend ticket to participant {participant_id}: {str(e)}")
     
     if success_count > 0:
         flash(f'Successfully resent {success_count} tickets!', 'success')
@@ -825,6 +835,11 @@ def bulk_delete_participants():
             if participant:
                 deleted_names.append(participant.name)
                 
+                # Delete associated certificates first
+                certificates = Certificate.query.filter_by(participant_id=participant_id).all()
+                for cert in certificates:
+                    db.session.delete(cert)
+                
                 # Delete participant
                 db.session.delete(participant)
                 deleted_count += 1
@@ -839,7 +854,7 @@ def bulk_delete_participants():
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting participants: {str(e)}', 'error')
-        print(f"❌ Error in bulk delete: {str(e)}")
+        print(f"? Error in bulk delete: {str(e)}")
     
     return redirect(request.referrer or url_for('index'))
 
@@ -879,12 +894,12 @@ def add_participant(event_id):
         db.session.commit()
         
         flash(f'Successfully added participant: {name} with ticket {ticket_number}', 'success')
-        print(f"✓ Added participant {name} ({email}) to event {event.name}")
+        print(f"? Added participant {name} ({email}) to event {event.name}")
         
     except Exception as e:
         db.session.rollback()
         flash(f'Error adding participant: {str(e)}', 'error')
-        print(f"❌ Error adding participant: {str(e)}")
+        print(f"? Error adding participant: {str(e)}")
     
     return redirect(url_for('event_dashboard', event_id=event_id))
 
@@ -1002,7 +1017,7 @@ def save_certificate_config(event_id):
             cert_config.signature2_title = form.signature2_title.data
             
             # Update timestamp
-            cert_config.updated_at = datetime.utcnow()
+            cert_config.updated_at = datetime.now(timezone.utc)
             
             db.session.commit()
             
@@ -1043,7 +1058,7 @@ def preview_certificate(event_id):
     
     # Create a sample certificate object
     sample_certificate = Certificate(
-        certificate_number=f"CERT-{event.id}-SAMPLE-{datetime.utcnow().strftime('%Y%m%d')}",
+        certificate_number=f"CERT-{event.id}-SAMPLE-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
         certificate_type=cert_config.certificate_type,
         organizer_name=cert_config.organizer_name,
         sponsor_name=cert_config.sponsor_name,
@@ -1057,7 +1072,7 @@ def preview_certificate(event_id):
         signature2_name=cert_config.signature2_name,
         signature2_title=cert_config.signature2_title,
         signature2_image_url=cert_config.signature2_image_url,
-        issued_date=datetime.utcnow()
+        issued_date=datetime.now(timezone.utc)
     )
     
     return render_template('certificate_professional.html',
@@ -1078,7 +1093,7 @@ def preview_single_certificate(participant_id):
     
     # Create certificate object for this participant
     sample_certificate = Certificate(
-        certificate_number=f"CERT-{event.id}-{participant.id}-{datetime.utcnow().strftime('%Y%m%d')}",
+        certificate_number=f"CERT-{event.id}-{participant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
         certificate_type=cert_config.certificate_type,
         organizer_name=cert_config.organizer_name,
         sponsor_name=cert_config.sponsor_name,
@@ -1092,7 +1107,7 @@ def preview_single_certificate(participant_id):
         signature2_name=cert_config.signature2_name,
         signature2_title=cert_config.signature2_title,
         signature2_image_url=cert_config.signature2_image_url,
-        issued_date=datetime.utcnow()
+        issued_date=datetime.now(timezone.utc)
     )
     
     return render_template('certificate_professional.html',
@@ -1126,7 +1141,7 @@ def generate_certificates(event_id):
         for participant in eligible_participants:
             try:
                 # Generate certificate
-                certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
                 
                 # Create certificate record
                 certificate = Certificate(
@@ -1146,7 +1161,7 @@ def generate_certificates(event_id):
                     signature2_name=cert_config.signature2_name,
                     signature2_title=cert_config.signature2_title,
                     signature2_image_url=cert_config.signature2_image_url,
-                    issued_date=datetime.utcnow()
+                    issued_date=datetime.now(timezone.utc)
                 )
                 
                 db.session.add(certificate)
@@ -1156,16 +1171,16 @@ def generate_certificates(event_id):
                 send_certificate_email(participant, event, certificate)
                 
                 success_count += 1
-                print(f"✓ Certificate generated and sent to {participant.name}")
+                print(f"? Certificate generated and sent to {participant.name}")
                 
             except Exception as e:
-                print(f"❌ Error generating certificate for {participant.name}: {str(e)}")
+                print(f"? Error generating certificate for {participant.name}: {str(e)}")
                 error_count += 1
         
         if success_count > 0:
-            flash(f'✅ Successfully generated and sent {success_count} certificates!', 'success')
+            flash(f'? Successfully generated and sent {success_count} certificates!', 'success')
         if error_count > 0:
-            flash(f'❌ {error_count} certificates failed to generate.', 'error')
+            flash(f'? {error_count} certificates failed to generate.', 'error')
             
     except Exception as e:
         db.session.rollback()
@@ -1178,7 +1193,7 @@ def send_certificate_email(participant, event, certificate):
     """Send certificate email with PDF attachment"""
     try:
         # Create certificate email
-        subject = f"🏆 Your Certificate - {event.name}"
+        subject = f"?? Your Certificate - {event.name}"
         
         # Render email template
         email_html = render_template('email/certificate_email.html',
@@ -1200,75 +1215,433 @@ def send_certificate_email(participant, event, certificate):
             if pdf_data:
                 filename = f"Certificate_{participant.name.replace(' ', '_')}_{event.name.replace(' ', '_')}.pdf"
                 msg.attach(filename, "application/pdf", pdf_data)
-                print(f"✅ PDF certificate attached: {filename}")
+                print(f"? PDF certificate attached: {filename}")
             else:
-                print("⚠️ PDF generation failed, sending email without attachment")
+                print("?? PDF generation failed, sending email without attachment")
         except Exception as pdf_error:
-            print(f"⚠️ PDF generation error: {str(pdf_error)}, sending email without attachment")
+            print(f"?? PDF generation error: {str(pdf_error)}, sending email without attachment")
         
-        print(f"🔄 Sending certificate email to {participant.email}")
+        print(f"?? Sending certificate email to {participant.email}")
         
         mail.send(msg)
         
         # Update certificate record
         certificate.email_sent = True
-        certificate.email_sent_date = datetime.utcnow()
+        certificate.email_sent_date = datetime.now(timezone.utc)
         db.session.commit()
         
-        print(f"✅ Certificate email sent successfully to {participant.email}")
+        print(f"? Certificate email sent successfully to {participant.email}")
         
     except Exception as e:
-        print(f"❌ Error sending certificate email to {participant.email}: {str(e)}")
+        print(f"? Error sending certificate email to {participant.email}: {str(e)}")
         raise e
 
 def generate_certificate_pdf(participant, event, certificate):
-    """Generate PDF certificate from HTML template"""
+    """Generate PDF certificate using multiple fallback methods"""
     try:
-        # Render the certificate HTML
-        certificate_html = render_template('certificate_professional.html',
-                                         event=event,
-                                         participant=participant,
-                                         certificate=certificate)
-        
-        # PDF options for better quality
-        options = {
-            'page-size': 'A4',
-            'orientation': 'Landscape',
-            'margin-top': '0.75in',
-            'margin-right': '0.75in',
-            'margin-bottom': '0.75in',
-            'margin-left': '0.75in',
-            'encoding': "UTF-8",
-            'no-outline': None,
-            'enable-local-file-access': None,
-            'print-media-type': None,
-            'disable-smart-shrinking': None,
-        }
-        
-        # Try to generate PDF using pdfkit
+        # Method 1: Try ReportLab (most reliable for serverless)
         try:
+            pdf_data = generate_certificate_with_reportlab(participant, event, certificate)
+            if pdf_data:
+                print(f"✅ PDF generated using ReportLab for {participant.name}")
+                return pdf_data
+        except ImportError:
+            print("⚠️ ReportLab not available")
+        except Exception as reportlab_error:
+            print(f"⚠️ ReportLab failed: {str(reportlab_error)}")
+        
+        # Method 2: Try rendering HTML and convert with WeasyPrint
+        try:
+            certificate_html = render_template('certificate_professional.html',
+                                             event=event,
+                                             participant=participant,
+                                             certificate=certificate)
+            
+            import weasyprint
+            pdf = weasyprint.HTML(string=certificate_html).write_pdf()
+            print(f"✅ PDF generated using WeasyPrint for {participant.name}")
+            return pdf
+        except ImportError:
+            print("⚠️ WeasyPrint not available")
+        except Exception as weasy_error:
+            print(f"⚠️ WeasyPrint failed: {str(weasy_error)}")
+            
+        # Method 3: Try pdfkit (requires wkhtmltopdf binary)
+        try:
+            certificate_html = render_template('certificate_professional.html',
+                                             event=event,
+                                             participant=participant,
+                                             certificate=certificate)
+            
+            options = {
+                'page-size': 'A4',
+                'orientation': 'Landscape',
+                'margin-top': '0.75in',
+                'margin-right': '0.75in',
+                'margin-bottom': '0.75in',
+                'margin-left': '0.75in',
+                'encoding': "UTF-8",
+                'no-outline': None,
+                'enable-local-file-access': None,
+                'print-media-type': None,
+                'disable-smart-shrinking': None,
+            }
+            
             pdf_data = pdfkit.from_string(certificate_html, False, options=options)
             print(f"✅ PDF generated using pdfkit for {participant.name}")
             return pdf_data
         except Exception as pdfkit_error:
             print(f"⚠️ pdfkit failed: {str(pdfkit_error)}")
-            
-            # Fallback: Try using WeasyPrint if available
-            try:
-                import weasyprint
-                pdf = weasyprint.HTML(string=certificate_html).write_pdf()
-                print(f"✅ PDF generated using WeasyPrint for {participant.name}")
-                return pdf
-            except ImportError:
-                print("⚠️ WeasyPrint not available")
-            except Exception as weasy_error:
-                print(f"⚠️ WeasyPrint failed: {str(weasy_error)}")
-            
-            # Final fallback: Return None (email will be sent without attachment)
-            return None
+        
+        # All methods failed
+        print(f"❌ All PDF generation methods failed for {participant.name}")
+        return None
             
     except Exception as e:
         print(f"❌ Error generating PDF certificate: {str(e)}")
+        return None
+
+def generate_certificate_with_reportlab(participant, event, certificate):
+    """Generate certificate PDF that matches HTML preview design with borders and styling"""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import inch
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.platypus.flowables import HRFlowable
+        from reportlab.graphics.shapes import Drawing, Rect, Line
+        from io import BytesIO
+        import requests
+        
+        print(f"🎨 Creating styled certificate PDF for {participant.name}")
+        
+        buffer = BytesIO()
+        
+        # Colors matching HTML template exactly
+        microsoft_blue = HexColor('#0078d4')
+        text_dark = HexColor('#323130')
+        text_medium = HexColor('#605e5c')
+        organizer_green = HexColor('#107c10')
+        location_purple = HexColor('#5c2d91')
+        border_light = HexColor('#e5e5e5')
+        
+        # Document setup with custom drawing function for borders
+        def draw_certificate_border(canvas, doc):
+            """Draw Microsoft-style certificate border and watermark"""
+            canvas.saveState()
+            
+            # Page dimensions
+            page_width, page_height = landscape(A4)
+            
+            # Main border (rounded rectangle with Microsoft blue)
+            canvas.setStrokeColor(microsoft_blue)
+            canvas.setLineWidth(4)
+            canvas.roundRect(0.4*inch, 0.4*inch, page_width - 0.8*inch, page_height - 0.8*inch, 12)
+            
+            # Inner border (subtle)
+            canvas.setStrokeColor(border_light)
+            canvas.setLineWidth(1)
+            canvas.roundRect(0.6*inch, 0.6*inch, page_width - 1.2*inch, page_height - 1.2*inch, 8)
+            
+            # Corner accent lines (Microsoft style)
+            canvas.setStrokeColor(microsoft_blue)
+            canvas.setLineWidth(3)
+            accent_length = 40
+            
+            # Top-left corner
+            canvas.line(0.7*inch, page_height - 0.7*inch, 0.7*inch + accent_length, page_height - 0.7*inch)
+            canvas.line(0.7*inch, page_height - 0.7*inch, 0.7*inch, page_height - 0.7*inch - accent_length)
+            
+            # Top-right corner
+            canvas.line(page_width - 0.7*inch, page_height - 0.7*inch, page_width - 0.7*inch - accent_length, page_height - 0.7*inch)
+            canvas.line(page_width - 0.7*inch, page_height - 0.7*inch, page_width - 0.7*inch, page_height - 0.7*inch - accent_length)
+            
+            # Bottom-left corner
+            canvas.line(0.7*inch, 0.7*inch, 0.7*inch + accent_length, 0.7*inch)
+            canvas.line(0.7*inch, 0.7*inch, 0.7*inch, 0.7*inch + accent_length)
+            
+            # Bottom-right corner
+            canvas.line(page_width - 0.7*inch, 0.7*inch, page_width - 0.7*inch - accent_length, 0.7*inch)
+            canvas.line(page_width - 0.7*inch, 0.7*inch, page_width - 0.7*inch, 0.7*inch + accent_length)
+            
+            # Watermark (rotated certificate number)
+            canvas.translate(page_width/2, page_height/2)
+            canvas.rotate(45)
+            canvas.setFillColor(microsoft_blue)
+            canvas.setFillAlpha(0.08)
+            canvas.setFont('Helvetica-Bold', 28)
+            canvas.drawCentredString(0, 0, certificate.certificate_number or "CERT-2024")
+            
+            canvas.restoreState()
+        
+        # Create document
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(A4),
+            rightMargin=1.2*inch,
+            leftMargin=1.2*inch,
+            topMargin=1.0*inch,
+            bottomMargin=1.0*inch
+        )
+        
+        # Styles matching HTML preview
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'CertTitle',
+            parent=styles['Normal'],
+            fontSize=42,
+            textColor=microsoft_blue,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            spaceAfter=5,
+            letterSpacing=2
+        )
+        
+        subtitle_style = ParagraphStyle(
+            'CertSubtitle',
+            parent=styles['Normal'],
+            fontSize=20,
+            textColor=text_dark,
+            alignment=TA_CENTER,
+            fontName='Helvetica',
+            spaceAfter=20,
+            letterSpacing=1
+        )
+        
+        label_style = ParagraphStyle(
+            'CertLabel',
+            parent=styles['Normal'],
+            fontSize=14,
+            textColor=text_medium,
+            alignment=TA_CENTER,
+            fontName='Helvetica',
+            spaceAfter=8,
+            letterSpacing=1
+        )
+        
+        name_style = ParagraphStyle(
+            'ParticipantName',
+            parent=styles['Normal'],
+            fontSize=38,
+            textColor=text_dark,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            spaceAfter=15
+        )
+        
+        description_style = ParagraphStyle(
+            'CertDescription',
+            parent=styles['Normal'],
+            fontSize=15,
+            textColor=text_dark,
+            alignment=TA_CENTER,
+            fontName='Helvetica',
+            leading=22,
+            spaceAfter=25
+        )
+        
+        sig_name_style = ParagraphStyle(
+            'SignatureName',
+            parent=styles['Normal'],
+            fontSize=13,
+            textColor=text_dark,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            spaceAfter=3
+        )
+        
+        sig_title_style = ParagraphStyle(
+            'SignatureTitle',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=text_medium,
+            alignment=TA_CENTER,
+            fontName='Helvetica'
+        )
+        
+        footer_left_style = ParagraphStyle(
+            'FooterLeft',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=microsoft_blue,
+            alignment=TA_LEFT,
+            fontName='Helvetica-Bold'
+        )
+        
+        footer_right_style = ParagraphStyle(
+            'FooterRight',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=microsoft_blue,
+            alignment=TA_RIGHT,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Content
+        story = []
+        
+        # Minimal top spacing for single page
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Logo section
+        if certificate.organizer_logo_url or certificate.sponsor_logo_url:
+            logo_elements = ["", "", ""]  # Left, center, right
+            
+            if certificate.organizer_logo_url:
+                try:
+                    response = requests.get(certificate.organizer_logo_url, timeout=10)
+                    if response.status_code == 200:
+                        logo_buffer = BytesIO(response.content)
+                        org_logo = Image(logo_buffer, width=1.1*inch, height=1.1*inch)
+                        logo_elements[0] = org_logo
+                except Exception as e:
+                    print(f"Could not load organizer logo: {e}")
+            
+            if certificate.sponsor_logo_url:
+                try:
+                    response = requests.get(certificate.sponsor_logo_url, timeout=10)
+                    if response.status_code == 200:
+                        logo_buffer = BytesIO(response.content)
+                        sponsor_logo = Image(logo_buffer, width=1.1*inch, height=1.1*inch)
+                        logo_elements[2] = sponsor_logo
+                except Exception as e:
+                    print(f"Could not load sponsor logo: {e}")
+            
+            if any(logo_elements):
+                logo_table = Table([logo_elements], colWidths=[1.5*inch, 3*inch, 1.5*inch])
+                logo_table.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ]))
+                story.append(logo_table)
+                story.append(Spacer(1, 0.1*inch))
+        
+        # Header line
+        story.append(HRFlowable(width=5*inch, thickness=2, color=border_light))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Certificate title
+        story.append(Paragraph("CERTIFICATE", title_style))
+        
+        # Certificate type
+        cert_type = certificate.certificate_type.title() if certificate.certificate_type else 'Participation'
+        story.append(Paragraph(f"of {cert_type}", subtitle_style))
+        
+        # This is to certify that
+        story.append(Paragraph("This is to certify that", label_style))
+        
+        # Participant name with underline
+        name_para = Paragraph(participant.name, name_style)
+        name_table = Table([[name_para]], colWidths=[5.5*inch])
+        name_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+            ('LINEBELOW', (0, 0), (0, 0), 3, microsoft_blue),
+            ('BOTTOMPADDING', (0, 0), (0, 0), 12),
+        ]))
+        story.append(name_table)
+        story.append(Spacer(1, 0.15*inch))
+        
+        # Description paragraph
+        action = "participated in"
+        if certificate.certificate_type == 'completion':
+            action = "completed"
+        elif certificate.certificate_type == 'achievement':
+            action = "achieved excellence in"
+        
+        desc_text = f'has successfully <font color="#0078d4"><b>{action}</b></font> the event<br/>'
+        desc_text += f'"<font color="#0078d4"><b>{event.name}</b></font>"<br/>'
+        desc_text += f'organized by <font color="#107c10"><b>{certificate.organizer_name or "Azure Developer Community Tamilnadu"}</b></font>'
+        
+        if certificate.event_location:
+            desc_text += f'<br/>at <font color="#5c2d91"><b>{certificate.event_location}</b></font>'
+        
+        if event.date:
+            desc_text += f'<br/>on <font color="#0078d4"><b>{event.date.strftime("%B %d, %Y")}</b></font>'
+        
+        desc_text += '.'
+        
+        if certificate.event_theme:
+            desc_text += f'<br/>This event focused on <font color="#0078d4"><b>{certificate.event_theme}</b></font>.'
+        
+        story.append(Paragraph(desc_text, description_style))
+        
+        # Reduced spacing before signatures
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Signature section
+        sig1_name = certificate.signature1_name or "Authorized Signatory"
+        sig1_title = certificate.signature1_title or "Microsoft MVP"
+        sig2_name = certificate.signature2_name or "Event Organizer"
+        sig2_title = certificate.signature2_title or "Microsoft MVP"
+        
+        # Signature lines
+        sig_line_data = [['_' * 35, '', '_' * 35]]
+        sig_line_table = Table(sig_line_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
+        sig_line_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 16),
+            ('TEXTCOLOR', (0, 0), (-1, -1), text_dark),
+        ]))
+        story.append(sig_line_table)
+        story.append(Spacer(1, 0.05*inch))
+        
+        # Signature names and titles
+        sig_name_data = [[
+            Paragraph(sig1_name, sig_name_style),
+            "",
+            Paragraph(sig2_name, sig_name_style)
+        ]]
+        
+        sig_title_data = [[
+            Paragraph(sig1_title, sig_title_style),
+            "",
+            Paragraph(sig2_title, sig_title_style)
+        ]]
+        
+        name_table = Table(sig_name_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
+        name_table.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+        
+        title_table = Table(sig_title_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
+        title_table.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+        
+        story.append(name_table)
+        story.append(title_table)
+        
+        # Footer section with minimal spacing
+        story.append(Spacer(1, 0.15*inch))
+        story.append(HRFlowable(width=5*inch, thickness=1, color=border_light))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Certificate details
+        footer_data = [[
+            Paragraph(f"Certificate No: {certificate.certificate_number}", footer_left_style),
+            Paragraph(f"Issued: {certificate.issued_date.strftime('%B %d, %Y')}", footer_right_style)
+        ]]
+        
+        footer_table = Table(footer_data, colWidths=[3*inch, 3*inch])
+        footer_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ]))
+        story.append(footer_table)
+        
+        # Build PDF with border function
+        doc.build(story, onFirstPage=draw_certificate_border, onLaterPages=draw_certificate_border)
+        
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        print(f"✅ Styled certificate PDF generated for {participant.name}")
+        return pdf_data
+        
+    except Exception as e:
+        print(f"❌ ReportLab PDF generation error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # Initialize database on startup
@@ -1276,7 +1649,7 @@ with app.app_context():
     try:
         # Only create tables if they don't exist (preserve existing data)
         db.create_all()
-        print("✓ Database tables created/verified (existing data preserved)")
+        print("? Database tables created/verified (existing data preserved)")
     except Exception as e:
         print(f"Warning: Could not create database tables: {e}")
 
