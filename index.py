@@ -1,6 +1,6 @@
 ﻿import os
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
@@ -10,7 +10,11 @@ from uuid import uuid4
 
 load_dotenv()
 
-app = Flask(__name__)
+# CRITICAL: Specify static and template folders
+app = Flask(__name__,
+            static_folder='static',
+            static_url_path='/static',
+            template_folder='templates')
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -55,10 +59,20 @@ class Participant(db.Model):
     def __repr__(self):
         return f'<Participant {self.name}>'
 
+# Favicon routes - prevent 404 errors
+@app.route('/favicon.ico')
+@app.route('/favicon.png')
+def favicon():
+    return '', 204
+
 # Routes
 @app.route('/')
 def index():
-    events = Event.query.order_by(Event.date.desc()).all()
+    try:
+        events = Event.query.order_by(Event.date.desc()).all()
+    except Exception as e:
+        print(f"Error fetching events: {e}")
+        events = []
     return render_template('index.html', events=events)
 
 @app.route('/create_event', methods=['GET', 'POST'])
@@ -80,6 +94,7 @@ def create_event():
             flash(f'Event "{name}" created successfully!', 'success')
             return redirect(url_for('upload_participants', event_id=event.id))
         except Exception as e:
+            db.session.rollback()
             flash(f'Error creating event: {str(e)}', 'error')
             return redirect(url_for('create_event'))
     
@@ -127,6 +142,7 @@ def upload_participants(event_id):
             flash('Participants uploaded successfully!', 'success')
             return redirect(url_for('send_emails', event_id=event_id))
         except Exception as e:
+            db.session.rollback()
             flash(f'Error uploading participants: {str(e)}', 'error')
             return redirect(url_for('upload_participants', event_id=event_id))
     
@@ -179,7 +195,6 @@ def send_emails(event_id):
 
 @app.route('/event/<int:event_id>/export')
 def export_attendance(event_id):
-    from flask import Response
     event = Event.query.get_or_404(event_id)
     participants = Participant.query.filter_by(event_id=event_id).all()
     
@@ -203,6 +218,11 @@ def export_attendance(event_id):
         headers={'Content-Disposition': f'attachment;filename=attendance_{event.id}.csv'}
     )
 
+# Error handlers
+@app.errorhandler(401)
+def unauthorized(error):
+    return render_template('401.html'), 401
+
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template('404.html'), 404
@@ -211,16 +231,23 @@ def page_not_found(e):
 def server_error(e):
     return render_template('500.html'), 500
 
-# Export the app for Vercel
-application = app
+# Prevent files from being downloaded as attachments
+@app.after_request
+def after_request(response):
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Content-Disposition'] = 'inline'
+    return response
 
-# Initialize database on startup
 # Initialize database on startup
 with app.app_context():
     try:
         db.create_all()
+        print("✓ Database tables created/verified")
     except Exception as e:
         print(f"Warning: Could not create database tables: {e}")
+
+# Export for Vercel
+application = app
 
 if __name__ == '__main__':
     app.run(debug=os.getenv('FLASK_ENV') == 'development')
