@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import csv
 import io
+import base64
 from uuid import uuid4
 
 load_dotenv()
@@ -91,6 +92,14 @@ class Participant(db.Model):
 def favicon():
     return '', 204
 
+# Helper function for templates
+@app.template_filter('logo_url')
+def logo_url_filter(logo_base64):
+    """Convert base64 logo to data URL for templates"""
+    if logo_base64 and logo_base64.startswith('data:'):
+        return logo_base64
+    return None
+
 # Routes
 @app.route('/')
 def index():
@@ -107,18 +116,32 @@ def create_event():
     
     if form.validate_on_submit():
         try:
-            # Handle logo upload
-            logo_filename = None
+            # Handle logo upload - convert to base64
+            logo_base64 = None
             if form.logo.data:
-                logo_file = form.logo.data
-                logo_filename = secure_filename(logo_file.filename)
-                # Add timestamp to avoid filename conflicts
-                logo_filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{logo_filename}"
-                logo_path = os.path.join('uploads', logo_filename)
-                # Ensure uploads directory exists
-                os.makedirs('uploads', exist_ok=True)
-                logo_file.save(logo_path)
-                logo_filename = logo_path
+                try:
+                    logo_file = form.logo.data
+                    # Read the file content
+                    logo_content = logo_file.read()
+                    # Convert to base64
+                    logo_base64_encoded = base64.b64encode(logo_content).decode('utf-8')
+                    # Create data URL with proper MIME type
+                    file_extension = logo_file.filename.lower().split('.')[-1]
+                    mime_types = {
+                        'jpg': 'image/jpeg',
+                        'jpeg': 'image/jpeg', 
+                        'png': 'image/png',
+                        'gif': 'image/gif'
+                    }
+                    mime_type = mime_types.get(file_extension, 'image/png')
+                    logo_base64 = f"data:{mime_type};base64,{logo_base64_encoded}"
+                    
+                    # Reset file pointer (just in case)
+                    logo_file.seek(0)
+                    
+                except Exception as e:
+                    flash(f'Error processing logo: {str(e)}', 'error')
+                    logo_base64 = None
             
             # Create event with all fields
             event = Event(
@@ -126,7 +149,7 @@ def create_event():
                 alias_name=form.alias_name.data,
                 date=form.date.data,
                 time=form.time.data,
-                logo=logo_filename,
+                logo=logo_base64,
                 location=form.location.data,
                 google_maps_url=form.google_maps_url.data,
                 description=form.description.data,
