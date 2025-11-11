@@ -1,37 +1,96 @@
 ﻿<!DOCTYPE html>
 <html>
 <head>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #007bff; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-        .content { background: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; }
-        .ticket { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #007bff; }
-        .ticket-number { font-size: 24px; font-weight: bold; color: #007bff; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Ticket for {{ event.name }}</title>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h2>🎫 Your Event Ticket</h2>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px;">
+    <div style="max-width: 600px; margin: 0 auto;">
+        
+        <!-- Header -->
+        <div style="background: #007bff; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            {% if event.logo %}
+            <img src="{{ event.logo }}" alt="{{ event.name }} Logo" style="max-width: 80px; max-height: 80px; margin-bottom: 10px; border-radius: 8px; background: white; padding: 5px;">
+            {% endif %}
+            <h1 style="margin: 0; font-size: 24px;">🎫 Your Event Ticket</h1>
+            <p style="margin: 10px 0 0 0;">You're registered for {{ event.name }}!</p>
         </div>
-        <div class="content">
-            <p>Hi {{ participant.name }},</p>
-            <p>Thank you for registering for our event!</p>
+        
+        <!-- Content -->
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px;">
+            <p>Dear {{ participant.name }},</p>
             
-            <div class="ticket">
-                <h3>{{ event.name }}</h3>
-                <p><strong>📅 Date:</strong> {{ event.date.strftime('%B %d, %Y') }}</p>
-                <p><strong>🎟️ Your Ticket Number:</strong></p>
-                <p class="ticket-number">{{ participant.ticket_number }}</p>
-                <p><strong>Please present this ticket at the entrance.</strong></p>
+            <p>Thank you for registering for <strong>{{ event.name }}</strong>. Your registration has been confirmed!</p>
+            
+            <!-- Ticket Box -->
+            <div style="background: white; border: 2px dashed #007bff; padding: 20px; margin: 20px 0; text-align: center; border-radius: 8px;">
+                <h3 style="margin: 0 0 10px 0; color: #007bff;">🎟️ Your Ticket</h3>
+                <div style="font-size: 20px; font-weight: bold; color: #007bff; font-family: monospace; background: #e3f2fd; padding: 10px; border-radius: 5px; margin: 10px 0;">{{ participant.ticket_number }}</div>
+                <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">Save this ticket number for event check-in</p>
             </div>
-
-            <p>{{ event.description }}</p>
             
-            <p>If you have any questions, please contact the organizer.</p>
-            <p>Best regards,<br>Event Team</p>
+            <!-- Event Details -->
+            <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="margin: 0 0 15px 0; color: #333;">📅 Event Details</h3>
+                
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; font-weight: bold; color: #555; width: 30%;">Event:</td>
+                        <td style="padding: 8px 0;">{{ event.name }}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; font-weight: bold; color: #555;">Date:</td>
+                        <td style="padding: 8px 0;">{{ event.date.strftime('%A, %B %d, %Y') }}</td>
+                    </tr>
+                    {% if event.time %}
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; font-weight: bold; color: #555;">Time:</td>
+                        <td style="padding: 8px 0;">{{ event.time.strftime('%I:%M %p') }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if event.location %}
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; font-weight: bold; color: #555;">Location:</td>
+                        <td style="padding: 8px 0;">{{ event.location }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; font-weight: bold; color: #555;">Participant:</td>
+                        <td style="padding: 8px 0;">{{ participant.name }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: bold; color: #555;">Email:</td>
+                        <td style="padding: 8px 0;">{{ participant.email }}</td>
+                    </tr>
+                </table>
+            </div>
+            
+            {% if event.instructions %}
+            <!-- Instructions -->
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <h4 style="margin: 0 0 10px 0;">📋 Event Instructions</h4>
+                <p style="margin: 0; white-space: pre-line;">{{ event.instructions }}</p>
+            </div>
+            {% endif %}
+            
+            <!-- Important Note -->
+            <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <strong>⚠️ Important:</strong> Please bring this ticket number for event check-in.
+            </div>
+            
+            <p>We look forward to seeing you at the event!</p>
+            
+            <p>Best regards,<br>
+            {% if event.organizer_name %}{{ event.organizer_name }}{% else %}The Event Team{% endif %}</p>
+            
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
+                <p style="margin: 5px 0;">This is an automated email. Please do not reply.</p>
+                <p style="margin: 5px 0;">© 2025 Event Ticketing System</p>
+            </div>
         </div>
+        
     </div>
 </body>
 </html>
