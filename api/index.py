@@ -4,7 +4,21 @@ import os
 # Add parent directory to path so imports work
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import app
+try:
+    from app import app
+except ImportError as e:
+    print(f"Import error: {e}")
+    # Fallback: create a simple app
+    from flask import Flask
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def hello():
+        return "Hello from Vercel! Import error occurred."
 
-# Vercel serverless function entry point
-app = app
+# Vercel expects this exact export
+application = app
+
+# Also provide direct access
+def handler(event, context):
+    return app(event, context)
