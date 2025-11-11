@@ -5,9 +5,17 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from app import app
+    from index import application
+    app = application
 except ImportError as e:
     print(f"Import error: {e}")
+    # Fallback for development
+    from flask import Flask
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def hello():
+        return 'Import Error - Check logs'
     # Fallback: create a simple app
     from flask import Flask
     app = Flask(__name__)
