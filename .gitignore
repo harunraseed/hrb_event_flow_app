@@ -9,6 +9,10 @@ env/
 ENV/
 .venv
 
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]

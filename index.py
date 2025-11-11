@@ -3,6 +3,11 @@ from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
+from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileAllowed
+from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField
+from wtforms.validators import DataRequired, Length, Optional, URL
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import csv
 import io
@@ -32,13 +37,34 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 db = SQLAlchemy(app)
 mail = Mail(app)
 
+# WTForms
+class CreateEventForm(FlaskForm):
+    name = StringField('Event Name', validators=[DataRequired(), Length(min=1, max=200)])
+    alias_name = StringField('Alias Name', validators=[Optional(), Length(max=50)])
+    date = DateField('Event Date', validators=[DataRequired()])
+    time = TimeField('Event Time', validators=[Optional()])
+    logo = FileField('Event Logo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    location = TextAreaField('Location', validators=[Optional()])
+    google_maps_url = StringField('Google Maps URL', validators=[Optional(), URL()])
+    description = TextAreaField('Description', validators=[Optional()])
+    organizer_name = StringField('Organizer Name', validators=[Optional(), Length(max=200)])
+    instructions = TextAreaField('Instructions', validators=[Optional()])
+    submit = SubmitField('Create Event')
+
 # Database Models
 class Event(db.Model):
     __tablename__ = 'events'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
+    alias_name = db.Column(db.String(50))  # For ticket numbering
     date = db.Column(db.Date, nullable=False)
+    time = db.Column(db.Time)  # Event start time
+    logo = db.Column(db.String(255))  # Logo file path
+    location = db.Column(db.Text)  # Event location
+    google_maps_url = db.Column(db.Text)  # Google Maps link
     description = db.Column(db.Text)
+    organizer_name = db.Column(db.String(200))  # Organizer name
+    instructions = db.Column(db.Text)  # Detailed instructions
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     participants = db.relationship('Participant', backref='event', lazy=True, cascade='all, delete-orphan')
 
@@ -77,28 +103,47 @@ def index():
 
 @app.route('/create_event', methods=['GET', 'POST'])
 def create_event():
-    if request.method == 'POST':
-        name = request.form.get('name')
-        date_str = request.form.get('date')
-        description = request.form.get('description')
-        
-        if not name or not date_str:
-            flash('Event name and date are required!', 'error')
-            return redirect(url_for('create_event'))
-        
+    form = CreateEventForm()
+    
+    if form.validate_on_submit():
         try:
-            event_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            event = Event(name=name, date=event_date, description=description)
+            # Handle logo upload
+            logo_filename = None
+            if form.logo.data:
+                logo_file = form.logo.data
+                logo_filename = secure_filename(logo_file.filename)
+                # Add timestamp to avoid filename conflicts
+                logo_filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{logo_filename}"
+                logo_path = os.path.join('uploads', logo_filename)
+                # Ensure uploads directory exists
+                os.makedirs('uploads', exist_ok=True)
+                logo_file.save(logo_path)
+                logo_filename = logo_path
+            
+            # Create event with all fields
+            event = Event(
+                name=form.name.data,
+                alias_name=form.alias_name.data,
+                date=form.date.data,
+                time=form.time.data,
+                logo=logo_filename,
+                location=form.location.data,
+                google_maps_url=form.google_maps_url.data,
+                description=form.description.data,
+                organizer_name=form.organizer_name.data,
+                instructions=form.instructions.data
+            )
+            
             db.session.add(event)
             db.session.commit()
-            flash(f'Event "{name}" created successfully!', 'success')
+            flash(f'Event "{form.name.data}" created successfully!', 'success')
             return redirect(url_for('upload_participants', event_id=event.id))
+            
         except Exception as e:
             db.session.rollback()
             flash(f'Error creating event: {str(e)}', 'error')
-            return redirect(url_for('create_event'))
     
-    return render_template('create_event.html')
+    return render_template('create_event.html', form=form)
 
 @app.route('/upload_participants/<int:event_id>', methods=['GET', 'POST'])
 def upload_participants(event_id):
@@ -241,6 +286,10 @@ def after_request(response):
 # Initialize database on startup
 with app.app_context():
     try:
+        # For development: drop and recreate tables to handle schema changes
+        if os.getenv('FLASK_ENV') == 'development':
+            db.drop_all()
+            print("✓ Dropped existing tables")
         db.create_all()
         print("✓ Database tables created/verified")
     except Exception as e:
