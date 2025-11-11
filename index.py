@@ -60,7 +60,7 @@ class Event(db.Model):
     alias_name = db.Column(db.String(50))  # For ticket numbering
     date = db.Column(db.Date, nullable=False)
     time = db.Column(db.Time)  # Event start time
-    logo = db.Column(db.String(255))  # Logo file path
+    logo = db.Column(db.Text)  # Logo as base64 string
     location = db.Column(db.Text)  # Event location
     google_maps_url = db.Column(db.Text)  # Google Maps link
     description = db.Column(db.Text)
