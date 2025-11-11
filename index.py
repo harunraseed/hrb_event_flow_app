@@ -215,8 +215,12 @@ def server_error(e):
 application = app
 
 # Initialize database on startup
+# Initialize database on startup
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+    except Exception as e:
+        print(f"Warning: Could not create database tables: {e}")
 
 if __name__ == '__main__':
     app.run(debug=os.getenv('FLASK_ENV') == 'development')
