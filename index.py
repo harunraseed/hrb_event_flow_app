@@ -26,12 +26,11 @@ app = Flask(__name__,
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Database configuration - Force SQLite for local development
-# Check if we're running locally or in production
-if os.getenv('FLASK_ENV') == 'production' and os.getenv('DATABASE_URL'):
-    # Only use PostgreSQL in production
+# Database configuration
+if os.getenv('DATABASE_URL'):
+    # Use PostgreSQL in production (including Vercel)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-    print("Using PostgreSQL database for production")
+    print("Using PostgreSQL database")
 else:
     # Use SQLite for local development
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
