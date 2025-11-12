@@ -184,7 +184,7 @@ class Event(db.Model):
         return f'<Event {self.name}>'
     
     def generate_ticket_number(self):
-        """Generate ticket number in format: ALIAS-EVENTDATE-001"""
+        """Generate unique ticket number in format: ALIAS-EVENTDATE-001"""
         # Use alias_name if available, otherwise use first 3 letters of event name
         if self.alias_name:
             prefix = self.alias_name.upper()
@@ -194,9 +194,26 @@ class Event(db.Model):
         # Format date as DDMMYYYY 
         date_str = self.date.strftime('%d%m%Y')
         
-        # Get the next sequential number for this event
-        existing_count = Participant.query.filter_by(event_id=self.id).count()
-        next_number = existing_count + 1
+        # Find the next available number by checking existing ticket numbers
+        base_pattern = f"{prefix}-{date_str}-"
+        
+        # Get all existing ticket numbers for this event with the same pattern
+        existing_participants = Participant.query.filter_by(event_id=self.id).all()
+        existing_numbers = []
+        
+        for participant in existing_participants:
+            if participant.ticket_number and participant.ticket_number.startswith(base_pattern):
+                try:
+                    # Extract the number part (last 3 digits)
+                    number_part = participant.ticket_number.split('-')[-1]
+                    existing_numbers.append(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+        
+        # Find the next available number
+        next_number = 1
+        while next_number in existing_numbers:
+            next_number += 1
         
         return f"{prefix}-{date_str}-{next_number:03d}"
 
@@ -1193,7 +1210,7 @@ def send_certificate_email(participant, event, certificate):
     """Send certificate email with PDF attachment"""
     try:
         # Create certificate email
-        subject = f"?? Your Certificate - {event.name}"
+        subject = f"Your Certificate - {event.name}"
         
         # Render email template
         email_html = render_template('email/certificate_email.html',
@@ -1302,341 +1319,239 @@ def generate_certificate_pdf(participant, event, certificate):
         return None
 
 def generate_certificate_with_reportlab(participant, event, certificate):
-    """Generate certificate PDF that matches HTML preview design with borders and styling"""
+    """Generate certificate PDF using proven ReportLab canvas approach"""
     try:
+        from flask import render_template
         from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.lib.units import inch
+        from reportlab.pdfgen import canvas
         from reportlab.lib.colors import HexColor
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-        from reportlab.platypus.flowables import HRFlowable
-        from reportlab.graphics.shapes import Drawing, Rect, Line
-        from io import BytesIO
+        from reportlab.lib.utils import ImageReader
+        import io
         import requests
+        from PIL import Image
+        import os
         
-        print(f"🎨 Creating styled certificate PDF for {participant.name}")
+        print(f"🎨 Creating certificate PDF for {participant.name} using proven method")
         
-        buffer = BytesIO()
+        # Helper function for centered text (ReportLab doesn't have drawCentredText)
+        def draw_centered_text(canvas_obj, x, y, text):
+            text_width = canvas_obj.stringWidth(text, canvas_obj._fontname, canvas_obj._fontsize)
+            canvas_obj.drawString(x - text_width/2, y, text)
         
-        # Colors matching HTML template exactly
-        microsoft_blue = HexColor('#0078d4')
-        text_dark = HexColor('#323130')
-        text_medium = HexColor('#605e5c')
-        organizer_green = HexColor('#107c10')
-        location_purple = HexColor('#5c2d91')
-        border_light = HexColor('#e5e5e5')
+        # Create PDF with ReportLab in LANDSCAPE orientation
+        pdf_buffer = io.BytesIO()
+        pagesize = landscape(A4)  # Change to landscape
+        pdf_canvas = canvas.Canvas(pdf_buffer, pagesize=pagesize)
+        width, height = pagesize  # Get landscape dimensions
         
-        # Document setup with custom drawing function for borders
-        def draw_certificate_border(canvas, doc):
-            """Draw Microsoft-style certificate border and watermark"""
-            canvas.saveState()
-            
-            # Page dimensions
-            page_width, page_height = landscape(A4)
-            
-            # Main border (rounded rectangle with Microsoft blue)
-            canvas.setStrokeColor(microsoft_blue)
-            canvas.setLineWidth(4)
-            canvas.roundRect(0.4*inch, 0.4*inch, page_width - 0.8*inch, page_height - 0.8*inch, 12)
-            
-            # Inner border (subtle)
-            canvas.setStrokeColor(border_light)
-            canvas.setLineWidth(1)
-            canvas.roundRect(0.6*inch, 0.6*inch, page_width - 1.2*inch, page_height - 1.2*inch, 8)
-            
-            # Corner accent lines (Microsoft style)
-            canvas.setStrokeColor(microsoft_blue)
-            canvas.setLineWidth(3)
-            accent_length = 40
-            
-            # Top-left corner
-            canvas.line(0.7*inch, page_height - 0.7*inch, 0.7*inch + accent_length, page_height - 0.7*inch)
-            canvas.line(0.7*inch, page_height - 0.7*inch, 0.7*inch, page_height - 0.7*inch - accent_length)
-            
-            # Top-right corner
-            canvas.line(page_width - 0.7*inch, page_height - 0.7*inch, page_width - 0.7*inch - accent_length, page_height - 0.7*inch)
-            canvas.line(page_width - 0.7*inch, page_height - 0.7*inch, page_width - 0.7*inch, page_height - 0.7*inch - accent_length)
-            
-            # Bottom-left corner
-            canvas.line(0.7*inch, 0.7*inch, 0.7*inch + accent_length, 0.7*inch)
-            canvas.line(0.7*inch, 0.7*inch, 0.7*inch, 0.7*inch + accent_length)
-            
-            # Bottom-right corner
-            canvas.line(page_width - 0.7*inch, 0.7*inch, page_width - 0.7*inch - accent_length, 0.7*inch)
-            canvas.line(page_width - 0.7*inch, 0.7*inch, page_width - 0.7*inch, 0.7*inch + accent_length)
-            
-            # Watermark (rotated certificate number)
-            canvas.translate(page_width/2, page_height/2)
-            canvas.rotate(45)
-            canvas.setFillColor(microsoft_blue)
-            canvas.setFillAlpha(0.08)
-            canvas.setFont('Helvetica-Bold', 28)
-            canvas.drawCentredString(0, 0, certificate.certificate_number or "CERT-2024")
-            
-            canvas.restoreState()
+        # Add certificate content using ReportLab
+        # Background and border
+        pdf_canvas.setStrokeColor(HexColor('#0078d4'))
+        pdf_canvas.setLineWidth(3)
+        pdf_canvas.rect(20, 20, width-40, height-40)
         
-        # Create document
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=landscape(A4),
-            rightMargin=1.2*inch,
-            leftMargin=1.2*inch,
-            topMargin=1.0*inch,
-            bottomMargin=1.0*inch
-        )
-        
-        # Styles matching HTML preview
-        styles = getSampleStyleSheet()
-        
-        title_style = ParagraphStyle(
-            'CertTitle',
-            parent=styles['Normal'],
-            fontSize=42,
-            textColor=microsoft_blue,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=5,
-            letterSpacing=2
-        )
-        
-        subtitle_style = ParagraphStyle(
-            'CertSubtitle',
-            parent=styles['Normal'],
-            fontSize=20,
-            textColor=text_dark,
-            alignment=TA_CENTER,
-            fontName='Helvetica',
-            spaceAfter=20,
-            letterSpacing=1
-        )
-        
-        label_style = ParagraphStyle(
-            'CertLabel',
-            parent=styles['Normal'],
-            fontSize=14,
-            textColor=text_medium,
-            alignment=TA_CENTER,
-            fontName='Helvetica',
-            spaceAfter=8,
-            letterSpacing=1
-        )
-        
-        name_style = ParagraphStyle(
-            'ParticipantName',
-            parent=styles['Normal'],
-            fontSize=38,
-            textColor=text_dark,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=15
-        )
-        
-        description_style = ParagraphStyle(
-            'CertDescription',
-            parent=styles['Normal'],
-            fontSize=15,
-            textColor=text_dark,
-            alignment=TA_CENTER,
-            fontName='Helvetica',
-            leading=22,
-            spaceAfter=25
-        )
-        
-        sig_name_style = ParagraphStyle(
-            'SignatureName',
-            parent=styles['Normal'],
-            fontSize=13,
-            textColor=text_dark,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold',
-            spaceAfter=3
-        )
-        
-        sig_title_style = ParagraphStyle(
-            'SignatureTitle',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=text_medium,
-            alignment=TA_CENTER,
-            fontName='Helvetica'
-        )
-        
-        footer_left_style = ParagraphStyle(
-            'FooterLeft',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=microsoft_blue,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold'
-        )
-        
-        footer_right_style = ParagraphStyle(
-            'FooterRight',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=microsoft_blue,
-            alignment=TA_RIGHT,
-            fontName='Helvetica-Bold'
-        )
-        
-        # Content
-        story = []
-        
-        # Minimal top spacing for single page
-        story.append(Spacer(1, 0.1*inch))
-        
-        # Logo section
-        if certificate.organizer_logo_url or certificate.sponsor_logo_url:
-            logo_elements = ["", "", ""]  # Left, center, right
-            
+        # Try to add logos if available (positioned near top border)
+        logo_y = height - 125  # MOVED MUCH CLOSER to top border
+        logo_width = 160  # Much larger - increased from 120
+        logo_height = 120  # Much larger - increased from 90
+        try:
             if certificate.organizer_logo_url:
-                try:
-                    response = requests.get(certificate.organizer_logo_url, timeout=10)
+                # Try to fetch and add organizer logo (LEFT side)
+                if certificate.organizer_logo_url.startswith('http'):
+                    response = requests.get(certificate.organizer_logo_url, timeout=5)
                     if response.status_code == 200:
-                        logo_buffer = BytesIO(response.content)
-                        org_logo = Image(logo_buffer, width=1.1*inch, height=1.1*inch)
-                        logo_elements[0] = org_logo
-                except Exception as e:
-                    print(f"Could not load organizer logo: {e}")
+                        logo_img = ImageReader(io.BytesIO(response.content))
+                        pdf_canvas.drawImage(logo_img, 40, logo_y, width=logo_width, height=logo_height, mask='auto', preserveAspectRatio=True)
+                else:
+                    # Local file - convert relative path to absolute
+                    if certificate.organizer_logo_url.startswith('/uploads/'):
+                        logo_path = os.path.join(os.getcwd(), certificate.organizer_logo_url[1:])
+                    else:
+                        logo_path = certificate.organizer_logo_url
+                    
+                    if os.path.exists(logo_path):
+                        logo_img = ImageReader(logo_path)
+                        pdf_canvas.drawImage(logo_img, 40, logo_y, width=logo_width, height=logo_height, mask='auto', preserveAspectRatio=True)
             
             if certificate.sponsor_logo_url:
-                try:
-                    response = requests.get(certificate.sponsor_logo_url, timeout=10)
+                # Try to fetch and add sponsor logo (RIGHT side)
+                if certificate.sponsor_logo_url.startswith('http'):
+                    response = requests.get(certificate.sponsor_logo_url, timeout=5)
                     if response.status_code == 200:
-                        logo_buffer = BytesIO(response.content)
-                        sponsor_logo = Image(logo_buffer, width=1.1*inch, height=1.1*inch)
-                        logo_elements[2] = sponsor_logo
-                except Exception as e:
-                    print(f"Could not load sponsor logo: {e}")
-            
-            if any(logo_elements):
-                logo_table = Table([logo_elements], colWidths=[1.5*inch, 3*inch, 1.5*inch])
-                logo_table.setStyle(TableStyle([
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ]))
-                story.append(logo_table)
-                story.append(Spacer(1, 0.1*inch))
+                        logo_img = ImageReader(io.BytesIO(response.content))
+                        pdf_canvas.drawImage(logo_img, width - logo_width - 40, logo_y, width=logo_width, height=logo_height, mask='auto', preserveAspectRatio=True)
+                else:
+                    # Local file - convert relative path to absolute
+                    if certificate.sponsor_logo_url.startswith('/uploads/'):
+                        logo_path = os.path.join(os.getcwd(), certificate.sponsor_logo_url[1:])
+                    else:
+                        logo_path = certificate.sponsor_logo_url
+                    
+                    if os.path.exists(logo_path):
+                        logo_img = ImageReader(logo_path)
+                        pdf_canvas.drawImage(logo_img, width - logo_width - 40, logo_y, width=logo_width, height=logo_height, mask='auto', preserveAspectRatio=True)
+        except Exception as logo_error:
+            print(f"Could not add logos to PDF: {logo_error}")
         
-        # Header line
-        story.append(HRFlowable(width=5*inch, thickness=2, color=border_light))
-        story.append(Spacer(1, 0.1*inch))
+        # Title
+        pdf_canvas.setFont("Helvetica-Bold", 36)
+        pdf_canvas.setFillColor(HexColor('#0078d4'))
+        draw_centered_text(pdf_canvas, width/2, height-180, "CERTIFICATE")
         
-        # Certificate title
-        story.append(Paragraph("CERTIFICATE", title_style))
+        # Subtitle
+        pdf_canvas.setFont("Helvetica", 18)
+        pdf_canvas.setFillColor(HexColor('#323130'))
+        draw_centered_text(pdf_canvas, width/2, height-210, f"OF {certificate.certificate_type.upper()}")
         
-        # Certificate type
-        cert_type = certificate.certificate_type.title() if certificate.certificate_type else 'Participation'
-        story.append(Paragraph(f"of {cert_type}", subtitle_style))
+        # "This is to certify that" text
+        pdf_canvas.setFont("Helvetica", 14)
+        pdf_canvas.setFillColor(HexColor('#605e5c'))
+        draw_centered_text(pdf_canvas, width/2, height-260, "This is to certify that")
         
-        # This is to certify that
-        story.append(Paragraph("This is to certify that", label_style))
+        # Participant name
+        pdf_canvas.setFont("Helvetica-Bold", 28)
+        pdf_canvas.setFillColor(HexColor('#323130'))
+        draw_centered_text(pdf_canvas, width/2, height-300, participant.name)
         
-        # Participant name with underline
-        name_para = Paragraph(participant.name, name_style)
-        name_table = Table([[name_para]], colWidths=[5.5*inch])
-        name_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-            ('LINEBELOW', (0, 0), (0, 0), 3, microsoft_blue),
-            ('BOTTOMPADDING', (0, 0), (0, 0), 12),
-        ]))
-        story.append(name_table)
-        story.append(Spacer(1, 0.15*inch))
+        # Underline for participant name
+        pdf_canvas.setStrokeColor(HexColor('#0078d4'))
+        pdf_canvas.setLineWidth(2)
+        name_width = pdf_canvas.stringWidth(participant.name, "Helvetica-Bold", 28)
+        pdf_canvas.line(width/2 - name_width/2, height-310, width/2 + name_width/2, height-310)
         
-        # Description paragraph
+        # Event details
+        pdf_canvas.setFont("Helvetica", 14)
+        pdf_canvas.setFillColor(HexColor('#323130'))
+        
+        # Description text
         action = "participated in"
         if certificate.certificate_type == 'completion':
             action = "completed"
         elif certificate.certificate_type == 'achievement':
             action = "achieved excellence in"
         
-        desc_text = f'has successfully <font color="#0078d4"><b>{action}</b></font> the event<br/>'
-        desc_text += f'"<font color="#0078d4"><b>{event.name}</b></font>"<br/>'
-        desc_text += f'organized by <font color="#107c10"><b>{certificate.organizer_name or "Azure Developer Community Tamilnadu"}</b></font>'
+        description = f"has successfully {action} the event"
+        draw_centered_text(pdf_canvas, width/2, height-350, description)
         
-        if certificate.event_location:
-            desc_text += f'<br/>at <font color="#5c2d91"><b>{certificate.event_location}</b></font>'
+        # Event name
+        pdf_canvas.setFont("Helvetica-Bold", 16)
+        pdf_canvas.setFillColor(HexColor('#0078d4'))
+        draw_centered_text(pdf_canvas, width/2, height-380, f'"{event.name}"')
+        
+        # Organizer and date info
+        pdf_canvas.setFont("Helvetica", 12)
+        pdf_canvas.setFillColor(HexColor('#323130'))
+        
+        organizer = certificate.organizer_name or 'Azure Developer Community Tamilnadu'
+        draw_centered_text(pdf_canvas, width/2, height-410, f"organized by {organizer}")
         
         if event.date:
-            desc_text += f'<br/>on <font color="#0078d4"><b>{event.date.strftime("%B %d, %Y")}</b></font>'
+            draw_centered_text(pdf_canvas, width/2, height-430, f"on {event.date.strftime('%B %d, %Y')}")
         
-        desc_text += '.'
+        if certificate.event_location:
+            draw_centered_text(pdf_canvas, width/2, height-450, f"at {certificate.event_location}")
         
-        if certificate.event_theme:
-            desc_text += f'<br/>This event focused on <font color="#0078d4"><b>{certificate.event_theme}</b></font>.'
-        
-        story.append(Paragraph(desc_text, description_style))
-        
-        # Reduced spacing before signatures
-        story.append(Spacer(1, 0.1*inch))
-        
-        # Signature section
-        sig1_name = certificate.signature1_name or "Authorized Signatory"
-        sig1_title = certificate.signature1_title or "Microsoft MVP"
-        sig2_name = certificate.signature2_name or "Event Organizer"
-        sig2_title = certificate.signature2_title or "Microsoft MVP"
+        # Signature section (moved to bottom)
+        signature_y = 120  # Moved down from 200
         
         # Signature lines
-        sig_line_data = [['_' * 35, '', '_' * 35]]
-        sig_line_table = Table(sig_line_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
-        sig_line_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 16),
-            ('TEXTCOLOR', (0, 0), (-1, -1), text_dark),
-        ]))
-        story.append(sig_line_table)
-        story.append(Spacer(1, 0.05*inch))
+        pdf_canvas.setStrokeColor(HexColor('#323130'))
+        pdf_canvas.setLineWidth(1)
+        pdf_canvas.line(150, signature_y, 300, signature_y)  # Left signature line
+        pdf_canvas.line(width-300, signature_y, width-150, signature_y)  # Right signature line
         
-        # Signature names and titles
-        sig_name_data = [[
-            Paragraph(sig1_name, sig_name_style),
-            "",
-            Paragraph(sig2_name, sig_name_style)
-        ]]
+        # Try to add signature images
+        try:
+            if certificate.signature1_image_url:
+                if certificate.signature1_image_url.startswith('http'):
+                    response = requests.get(certificate.signature1_image_url, timeout=5)
+                    if response.status_code == 200:
+                        sig_img = ImageReader(io.BytesIO(response.content))
+                        pdf_canvas.drawImage(sig_img, 175, signature_y + 10, width=120, height=50, mask='auto')
+                else:
+                    # Local file - convert relative path to absolute
+                    if certificate.signature1_image_url.startswith('/uploads/'):
+                        sig_path = os.path.join(os.getcwd(), certificate.signature1_image_url[1:])
+                    else:
+                        sig_path = certificate.signature1_image_url
+                    
+                    if os.path.exists(sig_path):
+                        sig_img = ImageReader(sig_path)
+                        pdf_canvas.drawImage(sig_img, 175, signature_y + 10, width=120, height=50, mask='auto')
+            
+            if certificate.signature2_image_url:
+                if certificate.signature2_image_url.startswith('http'):
+                    response = requests.get(certificate.signature2_image_url, timeout=5)
+                    if response.status_code == 200:
+                        sig_img = ImageReader(io.BytesIO(response.content))
+                        pdf_canvas.drawImage(sig_img, width-295, signature_y + 10, width=120, height=50, mask='auto')
+                else:
+                    # Local file - convert relative path to absolute
+                    if certificate.signature2_image_url.startswith('/uploads/'):
+                        sig_path = os.path.join(os.getcwd(), certificate.signature2_image_url[1:])
+                    else:
+                        sig_path = certificate.signature2_image_url
+                    
+                    if os.path.exists(sig_path):
+                        sig_img = ImageReader(sig_path)
+                        pdf_canvas.drawImage(sig_img, width-295, signature_y + 10, width=120, height=50, mask='auto')
+        except Exception as sig_error:
+            print(f"Could not add signatures to PDF: {sig_error}")
         
-        sig_title_data = [[
-            Paragraph(sig1_title, sig_title_style),
-            "",
-            Paragraph(sig2_title, sig_title_style)
-        ]]
+        # Signature names
+        signature1_name = certificate.signature1_name or 'Authorized Signatory'
+        signature2_name = certificate.signature2_name or 'Event Organizer'
         
-        name_table = Table(sig_name_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
-        name_table.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+        pdf_canvas.setFont("Helvetica-Bold", 11)
+        pdf_canvas.setFillColor(HexColor('#323130'))
+        draw_centered_text(pdf_canvas, 225, signature_y - 20, signature1_name)
+        draw_centered_text(pdf_canvas, width-225, signature_y - 20, signature2_name)
         
-        title_table = Table(sig_title_data, colWidths=[2.5*inch, 1*inch, 2.5*inch])
-        title_table.setStyle(TableStyle([('ALIGN', (0, 0), (-1, -1), 'CENTER')]))
+        # Signature titles
+        signature1_title = certificate.signature1_title or 'Microsoft MVP'
+        signature2_title = certificate.signature2_title or 'Microsoft MVP'
         
-        story.append(name_table)
-        story.append(title_table)
+        pdf_canvas.setFont("Helvetica", 9)
+        pdf_canvas.setFillColor(HexColor('#605e5c'))
+        draw_centered_text(pdf_canvas, 225, signature_y - 35, signature1_title)
+        draw_centered_text(pdf_canvas, width-225, signature_y - 35, signature2_title)
         
-        # Footer section with minimal spacing
-        story.append(Spacer(1, 0.15*inch))
-        story.append(HRFlowable(width=5*inch, thickness=1, color=border_light))
-        story.append(Spacer(1, 0.1*inch))
+        # Footer with certificate details (moved down)
+        pdf_canvas.setFont("Helvetica-Bold", 10)
+        pdf_canvas.setFillColor(HexColor('#0078d4'))
+        pdf_canvas.drawString(50, 50, f"Certificate No: {certificate.certificate_number}")
+        pdf_canvas.drawString(width-250, 50, f"Issued: {certificate.issued_date.strftime('%B %d, %Y')}")
         
-        # Certificate details
-        footer_data = [[
-            Paragraph(f"Certificate No: {certificate.certificate_number}", footer_left_style),
-            Paragraph(f"Issued: {certificate.issued_date.strftime('%B %d, %Y')}", footer_right_style)
-        ]]
+        # Corner accents
+        pdf_canvas.setStrokeColor(HexColor('#0078d4'))
+        pdf_canvas.setLineWidth(4)
+        # Top left
+        pdf_canvas.line(35, height-35, 85, height-35)
+        pdf_canvas.line(35, height-35, 35, height-85)
+        # Top right
+        pdf_canvas.line(width-85, height-35, width-35, height-35)
+        pdf_canvas.line(width-35, height-35, width-35, height-85)
+        # Bottom left
+        pdf_canvas.line(35, 85, 85, 85)
+        pdf_canvas.line(35, 85, 35, 35)
+        # Bottom right
+        pdf_canvas.line(width-85, 85, width-35, 85)
+        pdf_canvas.line(width-35, 85, width-35, 35)
         
-        footer_table = Table(footer_data, colWidths=[3*inch, 3*inch])
-        footer_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-        ]))
-        story.append(footer_table)
+        # Save the PDF
+        pdf_canvas.save()
         
-        # Build PDF with border function
-        doc.build(story, onFirstPage=draw_certificate_border, onLaterPages=draw_certificate_border)
+        pdf_buffer.seek(0)
+        pdf_data = pdf_buffer.getvalue()
+        pdf_size = len(pdf_data)
         
-        pdf_data = buffer.getvalue()
-        buffer.close()
+        print(f"✅ Certificate PDF generated successfully, size: {pdf_size} bytes")
         
-        print(f"✅ Styled certificate PDF generated for {participant.name}")
         return pdf_data
+        
+    except Exception as e:
+        print(f"❌ Certificate PDF generation failed: {e}")
+        return None
         
     except Exception as e:
         print(f"❌ ReportLab PDF generation error: {str(e)}")
@@ -1649,7 +1564,7 @@ with app.app_context():
     try:
         # Only create tables if they don't exist (preserve existing data)
         db.create_all()
-        print("? Database tables created/verified (existing data preserved)")
+        print("🗃️ Database tables created/verified (existing data preserved)")
     except Exception as e:
         print(f"Warning: Could not create database tables: {e}")
 
