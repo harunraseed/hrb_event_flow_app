@@ -2673,12 +2673,9 @@ def generate_quiz_qr(event_id):
         event = Event.query.get_or_404(event_id)
         quiz = Quiz.query.filter_by(event_id=event_id).first()
         
-        if not quiz:
-            # Create a simple QR code that goes to quiz creation page
-            quiz_join_url = url_for('quiz_config', event_id=event_id, _external=True)
-        else:
-            # Create the quiz join URL (mobile-friendly) - use play route, not join
-            quiz_join_url = url_for('play_quiz', event_id=event_id, _external=True)
+        # Always create QR code for the quiz game level (play route)
+        # Even if quiz doesn't exist yet, participants should land on the quiz play page
+        quiz_join_url = url_for('play_quiz', event_id=event_id, _external=True)
         
         # Generate QR code
         qr = qrcode.QRCode(
