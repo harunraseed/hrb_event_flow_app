@@ -2312,8 +2312,7 @@ def play_quiz(event_id):
         return redirect(url_for('event_dashboard', event_id=event_id))
     
     if quiz.is_ended:
-        flash('Quiz has ended. Check the leaderboard for results.', 'info')
-        return redirect(url_for('quiz_leaderboard', event_id=event_id))
+        return render_template('quiz_ended.html', event=event, quiz=quiz)
     
     return render_template('play_quiz.html', event=event, quiz=quiz)
 
@@ -2348,8 +2347,11 @@ def join_quiz(event_id):
                 }
                 quiz_performance.cache_quiz_data(event_id, quiz_cache_data)
         
-        if not quiz or not quiz.is_active:
-            return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
+        if not quiz or not quiz.is_active or quiz.is_ended:
+            if quiz and quiz.is_ended:
+                return jsonify({'success': False, 'error': 'Quiz has ended. Check the leaderboard for results.'}), 400
+            else:
+                return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
         
         # Check participant limit before allowing new participants
         if quiz.is_full:
@@ -2477,6 +2479,11 @@ def submit_quiz_answer(attempt_id):
         perf_manager = app.extensions.get('quiz_performance')
         
         attempt = QuizAttempt.query.get_or_404(attempt_id)
+        quiz = attempt.quiz
+        
+        # Check if quiz is still active
+        if not quiz.is_active or quiz.is_ended:
+            return jsonify({'success': False, 'error': 'Quiz is no longer active'}), 400
         
         # Get current question
         question = QuizQuestion.query.filter_by(
@@ -2676,9 +2683,6 @@ def generate_quiz_qr(event_id):
         # Always create QR code for the quiz game level (play route)
         # Even if quiz doesn't exist yet, participants should land on the quiz play page
         quiz_join_url = url_for('play_quiz', event_id=event_id, _external=True)
-        
-        # Debug: Print the URL being used for QR generation
-        print(f"🔍 QR Code Debug: Generating QR for URL: {quiz_join_url}")
         
         # Generate QR code
         qr = qrcode.QRCode(

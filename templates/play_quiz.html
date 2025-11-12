@@ -627,7 +627,31 @@
         
         // Initialize quiz app when page loads
         document.addEventListener('DOMContentLoaded', function() {
+            // Check if quiz is still active on page load
+            checkQuizStatus();
             new QuizApp();
+        });
+        
+        // Function to check quiz status
+        function checkQuizStatus() {
+            fetch(`/api/quiz/{{ quiz.id }}/live-stats`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.is_active || data.quiz_status && data.quiz_status.is_ended) {
+                        // Quiz has ended, redirect to ended page
+                        window.location.href = '{{ url_for("play_quiz", event_id=event.id) }}';
+                    }
+                })
+                .catch(error => {
+                    console.log('Quiz status check failed:', error);
+                });
+        }
+        
+        // Prevent browser back button after quiz participation
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                checkQuizStatus();
+            }
         });
     </script>
 </body>

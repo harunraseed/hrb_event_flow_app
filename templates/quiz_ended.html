@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Ended - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-info text-white text-center">
+                    <h3><i class="fas fa-flag-checkered"></i> Quiz Ended</h3>
+                </div>
+                <div class="card-body text-center">
+                    <h4>{{ quiz.title }}</h4>
+                    <p class="text-muted">{{ event.name }}</p>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-clock"></i>
+                        <strong>This quiz has ended.</strong><br>
+                        {% if quiz.quiz_end_time %}
+                            Ended on {{ quiz.quiz_end_time.strftime('%B %d, %Y at %I:%M %p') }}
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mt-4">
+                        <h5><i class="fas fa-trophy text-warning"></i> Want to see the results?</h5>
+                        <p>Check out the leaderboard to see how everyone performed!</p>
+                        
+                        <div class="btn-group mt-3">
+                            <a href="{{ url_for('quiz_leaderboard', event_id=event.id) }}" 
+                               class="btn btn-primary btn-lg">
+                                <i class="fas fa-trophy"></i> View Leaderboard
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 pt-4 border-top">
+                        <h6 class="text-muted">Quiz Statistics</h6>
+                        <div class="row">
+                            <div class="col-4">
+                                <div class="text-primary">
+                                    <h5>{{ quiz.total_questions }}</h5>
+                                    <small>Total Questions</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-success">
+                                    <h5>{{ quiz.current_participants }}</h5>
+                                    <small>Participants</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-info">
+                                    <h5>{{ quiz.time_per_question }}s</h5>
+                                    <small>Per Question</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer text-center text-muted">
+                    <small>
+                        <i class="fas fa-info-circle"></i>
+                        This quiz is no longer accepting new participants or answers.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+}
+
+.card {
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    border-radius: 15px 15px 0 0 !important;
+}
+</style>
+{% endblock %}
