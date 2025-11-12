@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Quiz Questions - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-upload text-primary"></i> Upload Quiz Questions</h2>
+            <p class="text-muted">Upload questions to <strong>{{ quiz.title }}</strong> via CSV file</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Quiz Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Upload Form -->
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-cloud-upload-alt"></i> Upload CSV File</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="mb-4">
+                            <label for="csv_file" class="form-label">Select CSV File *</label>
+                            {{ form.csv_file(class="form-control") }}
+                            {% if form.csv_file.errors %}
+                                <div class="text-danger small mt-1">
+                                    {% for error in form.csv_file.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-text">
+                                <i class="fas fa-info-circle text-info"></i>
+                                Upload a CSV file with question data. See the format requirements below.
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            {{ form.submit(class="btn btn-primary btn-lg") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Sample Data -->
+            <div class="card mt-4">
+                <div class="card-header bg-success text-white">
+                    <h6 class="mb-0"><i class="fas fa-table"></i> Sample CSV Data</h6>
+                </div>
+                <div class="card-body">
+                    <p>Your CSV file should look like this:</p>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Question</th>
+                                    <th>Option A</th>
+                                    <th>Option B</th>
+                                    <th>Option C</th>
+                                    <th>Option D</th>
+                                    <th>Correct Answer</th>
+                                    <th>Points</th>
+                                    <th>Time Limit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>What is the capital of France?</td>
+                                    <td>London</td>
+                                    <td>Berlin</td>
+                                    <td>Paris</td>
+                                    <td>Madrid</td>
+                                    <td>C</td>
+                                    <td>1</td>
+                                    <td>30</td>
+                                </tr>
+                                <tr>
+                                    <td>Which programming language is known for web development?</td>
+                                    <td>JavaScript</td>
+                                    <td>Assembly</td>
+                                    <td>COBOL</td>
+                                    <td>Fortran</td>
+                                    <td>A</td>
+                                    <td>2</td>
+                                    <td>25</td>
+                                </tr>
+                                <tr>
+                                    <td>What does HTTP stand for?</td>
+                                    <td>High Text Transfer Protocol</td>
+                                    <td>HyperText Transfer Protocol</td>
+                                    <td>Home Tool Transfer Protocol</td>
+                                    <td>Host Type Transfer Protocol</td>
+                                    <td>B</td>
+                                    <td>1</td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Download Template Button -->
+                    <div class="mt-3">
+                        <button class="btn btn-success" onclick="downloadTemplate()">
+                            <i class="fas fa-download"></i> Download CSV Template
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Format Requirements -->
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fas fa-list-check"></i> CSV Format Requirements</h6>
+                </div>
+                <div class="card-body">
+                    <div class="small">
+                        <h6 class="text-primary">Required Columns (1-6):</h6>
+                        <ul>
+                            <li><strong>Question:</strong> The question text</li>
+                            <li><strong>Option A:</strong> First answer choice</li>
+                            <li><strong>Option B:</strong> Second answer choice</li>
+                            <li><strong>Option C:</strong> Third answer choice</li>
+                            <li><strong>Option D:</strong> Fourth answer choice</li>
+                            <li><strong>Correct Answer:</strong> A, B, C, or D</li>
+                        </ul>
+                        
+                        <h6 class="text-primary mt-3">Optional Columns (7-8):</h6>
+                        <ul>
+                            <li><strong>Points:</strong> Points for correct answer (default: 1)</li>
+                            <li><strong>Time Limit:</strong> Seconds for this question (uses quiz default if empty)</li>
+                        </ul>
+                        
+                        <h6 class="text-primary mt-3">Important Notes:</h6>
+                        <ul>
+                            <li>Include header row in your CSV</li>
+                            <li>Questions are added in order</li>
+                            <li>Empty rows are skipped</li>
+                            <li>Invalid rows are ignored</li>
+                            <li>Correct answer must be A, B, C, or D</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tips Card -->
+            <div class="card mt-3">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Upload Tips</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0">
+                        <li><strong>Test Small:</strong> Start with 3-5 questions to test the format</li>
+                        <li><strong>Check Data:</strong> Review your CSV in a spreadsheet first</li>
+                        <li><strong>UTF-8 Encoding:</strong> Save your CSV with UTF-8 encoding</li>
+                        <li><strong>No Commas in Text:</strong> Use semicolons instead of commas in question text</li>
+                        <li><strong>Backup:</strong> Keep a copy of your questions file</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Current Stats -->
+            <div class="card mt-3">
+                <div class="card-header bg-secondary text-white">
+                    <h6 class="mb-0"><i class="fas fa-chart-bar"></i> Current Quiz Stats</h6>
+                </div>
+                <div class="card-body text-center">
+                    <h4 class="text-primary">{{ quiz.total_questions }}</h4>
+                    <p class="mb-0">Questions currently in quiz</p>
+                    
+                    {% if quiz.total_questions > 0 %}
+                        <hr>
+                        <small class="text-muted">
+                            Time per question: {{ quiz.time_per_question }}s<br>
+                            Total estimated time: {{ quiz.total_questions * quiz.time_per_question }}s
+                        </small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function downloadTemplate() {
+    // Create CSV content
+    const csvContent = `Question,Option A,Option B,Option C,Option D,Correct Answer,Points,Time Limit
+"What is the capital of France?","London","Berlin","Paris","Madrid","C","1","30"
+"Which programming language is known for web development?","JavaScript","Assembly","COBOL","Fortran","A","2","25"
+"What does HTTP stand for?","High Text Transfer Protocol","HyperText Transfer Protocol","Home Tool Transfer Protocol","Host Type Transfer Protocol","B","1",""
+"In which year was JavaScript created?","1995","1990","2000","1985","A","1",""
+"What does CSS stand for?","Computer Style Sheets","Creative Style Sheets","Cascading Style Sheets","Colorful Style Sheets","C","1",""`;
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'quiz_questions_template.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+// File upload preview
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('csv_file');
+    
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileName = file.name;
+                const fileSize = (file.size / 1024).toFixed(1); // KB
+                
+                // Create or update file info display
+                let fileInfo = document.getElementById('file-info');
+                if (!fileInfo) {
+                    fileInfo = document.createElement('div');
+                    fileInfo.id = 'file-info';
+                    fileInfo.className = 'alert alert-info mt-2';
+                    fileInput.parentNode.appendChild(fileInfo);
+                }
+                
+                fileInfo.innerHTML = `
+                    <i class="fas fa-file-csv"></i> 
+                    <strong>${fileName}</strong> (${fileSize} KB)
+                    <br><small>Ready to upload</small>
+                `;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

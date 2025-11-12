@@ -26,6 +26,18 @@ body {
     flex: 1;
 }
 
+/* Mobile-first responsive design */
+@media (max-width: 767px) {
+    .container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    body {
+        font-size: 14px;
+    }
+}
+
 /* Navbar Styles */
 .navbar-brand {
     font-size: 1.5rem;
@@ -34,6 +46,23 @@ body {
 
 .navbar {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Mobile navbar improvements */
+@media (max-width: 991px) {
+    .navbar-brand {
+        font-size: 1.2rem;
+    }
+    
+    .navbar-toggler {
+        border: none;
+        padding: 4px 8px;
+    }
+    
+    .navbar-nav {
+        text-align: center;
+        margin-top: 10px;
+    }
 }
 
 /* Card Styles */
@@ -45,6 +74,17 @@ body {
 .card:hover {
     transform: translateY(-5px);
     box-shadow: 0 8px 16px rgba(0,0,0,0.15) !important;
+}
+
+/* Mobile card optimization */
+@media (max-width: 767px) {
+    .card:hover {
+        transform: none; /* Disable hover effects on mobile */
+    }
+    
+    .card {
+        margin-bottom: 15px;
+    }
 }
 
 .card-title {
@@ -259,4 +299,407 @@ pre {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #0056b3;
+}
+
+/* ===== MOBILE RESPONSIVENESS ===== */
+
+/* Mobile-first responsive design */
+@media (max-width: 767.98px) {
+    /* General mobile layout */
+    .container {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    /* Responsive navbar */
+    .navbar-brand {
+        font-size: 1.2rem;
+    }
+    
+    /* Card adjustments for mobile */
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Button groups stack vertically on mobile */
+    .btn-group {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn-group .btn {
+        margin-bottom: 0.5rem;
+        border-radius: 0.375rem !important;
+    }
+    
+    .btn-group .btn:last-child {
+        margin-bottom: 0;
+    }
+    
+    /* Event dashboard mobile optimization */
+    .event-dashboard .col-md-4 {
+        text-align: center !important;
+        margin-top: 1rem;
+    }
+    
+    /* Table responsiveness */
+    .table-responsive {
+        font-size: 0.9rem;
+    }
+    
+    .table th,
+    .table td {
+        padding: 0.5rem;
+        white-space: nowrap;
+    }
+    
+    /* Form optimizations */
+    .form-control,
+    .form-select {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+    
+    /* Certificate preview mobile */
+    .certificate-preview {
+        padding: 0.5rem;
+    }
+    
+    /* Upload area mobile */
+    .upload-area {
+        min-height: 120px;
+        padding: 1rem;
+    }
+    
+    /* Stats cards mobile layout */
+    .stats-row .col-md-3 {
+        margin-bottom: 1rem;
+    }
+    
+    /* Participant list mobile */
+    .participant-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .participant-actions .btn {
+        font-size: 0.8rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    /* Certificate assets mobile */
+    .certificate-assets .col-lg-6 {
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Modal adjustments for mobile */
+    .modal-dialog {
+        margin: 1rem;
+    }
+    
+    .modal-body {
+        padding: 1rem;
+    }
+}
+
+/* Small mobile devices */
+@media (max-width: 575.98px) {
+    /* Extra small screens */
+    .container {
+        max-width: 100%;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    /* Smaller fonts for very small screens */
+    h1 {
+        font-size: 1.5rem;
+    }
+    
+    h2 {
+        font-size: 1.3rem;
+    }
+    
+    h3 {
+        font-size: 1.1rem;
+    }
+    
+    /* Compact button layout */
+    .btn-sm {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    /* Table even more compact */
+    .table-responsive {
+        font-size: 0.8rem;
+    }
+    
+    .table th,
+    .table td {
+        padding: 0.3rem;
+    }
+    
+    /* Hide some less important columns on very small screens */
+    .table .d-none-xs {
+        display: none !important;
+    }
+}
+
+/* Tablet and larger mobile landscape */
+@media (min-width: 576px) and (max-width: 991.98px) {
+    /* Tablet optimizations */
+    .btn-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .btn-group .btn {
+        flex: 1;
+        min-width: 120px;
+    }
+    
+    /* Better spacing for tablets */
+    .card-body {
+        padding: 1.25rem;
+    }
+}
+
+/* Touch-friendly interactions */
+@media (hover: none) {
+    /* Remove hover effects on touch devices */
+    .card:hover {
+        transform: none;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
+    }
+    
+    .btn:hover {
+        transform: none;
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2),
+       (min-resolution: 192dpi) {
+    /* Ensure crisp rendering on high DPI displays */
+    .card {
+        border-width: 0.5px;
+    }
+    
+    .btn {
+        border-width: 0.5px;
+    }
+}
+
+/* Landscape orientation adjustments */
+@media (orientation: landscape) and (max-height: 600px) {
+    /* Optimize for landscape mobile */
+    .navbar {
+        padding: 0.25rem 0;
+    }
+    
+    .container {
+        margin-top: 1rem;
+    }
+    
+    .modal-dialog {
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+}
+
+/* Print styles for certificates */
+@media print {
+    .navbar,
+    .btn,
+    .alert {
+        display: none !important;
+    }
+    
+    .certificate-preview {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+}
+
+/* Enhanced Mobile Optimizations */
+@media (max-width: 767px) {
+    /* Event Dashboard Mobile */
+    .event-dashboard .btn-group {
+        display: flex !important;
+        flex-direction: column;
+        width: 100%;
+        gap: 5px;
+    }
+    
+    .event-dashboard .btn {
+        width: 100%;
+        margin-bottom: 5px;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+    
+    /* Stats cards mobile */
+    .stats-row .col-md-3 {
+        margin-bottom: 10px;
+    }
+    
+    .card-body h2 {
+        font-size: 1.5rem;
+    }
+    
+    /* Table mobile optimization */
+    .table-responsive {
+        border: none;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .table th,
+    .table td {
+        padding: 8px 4px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    
+    /* Hide less important columns on mobile */
+    .table .d-none-mobile {
+        display: none !important;
+    }
+    
+    /* Action buttons mobile */
+    .btn-sm {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    
+    /* Quiz mobile optimizations */
+    .quiz-container {
+        padding: 5px;
+    }
+    
+    .quiz-card {
+        border-radius: 15px;
+        margin: 10px 0;
+    }
+    
+    .option-button {
+        padding: 12px 15px;
+        margin: 5px 0;
+        font-size: 14px;
+        border-radius: 10px;
+    }
+    
+    .timer-circle {
+        width: 60px;
+        height: 60px;
+        font-size: 1.2rem;
+    }
+    
+    /* Form mobile improvements */
+    .form-control,
+    .form-select {
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px;
+    }
+    
+    .btn-lg {
+        padding: 12px 24px;
+        font-size: 16px;
+    }
+    
+    /* Modal mobile */
+    .modal-dialog {
+        margin: 10px;
+        max-width: calc(100% - 20px);
+    }
+    
+    .modal-body {
+        padding: 15px;
+    }
+    
+    /* Certificate preview mobile */
+    .certificate-container {
+        padding: 10px;
+    }
+    
+    .certificate-preview {
+        transform: scale(0.8);
+        transform-origin: top center;
+    }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+    /* Mobile devices without hover */
+    .btn {
+        min-height: 44px; /* Apple's recommended touch target size */
+        min-width: 44px;
+    }
+    
+    .btn-sm {
+        min-height: 38px;
+        min-width: 38px;
+    }
+    
+    /* Increase clickable areas */
+    .nav-link {
+        padding: 12px 16px;
+    }
+    
+    .table .btn {
+        margin: 2px;
+    }
+    
+    /* Remove hover effects on touch devices */
+    .card:hover,
+    .btn:hover {
+        transform: none;
+        box-shadow: none;
+    }
+}
+
+/* Tablet optimizations */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .container {
+        max-width: 100%;
+        padding: 0 20px;
+    }
+    
+    .event-dashboard .btn-group {
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    
+    .quiz-container {
+        padding: 15px;
+    }
+    
+    .table th,
+    .table td {
+        padding: 12px 8px;
+        font-size: 14px;
+    }
+}
+
+/* Large screen optimizations */
+@media (min-width: 1200px) {
+    .quiz-card {
+        max-width: 900px;
+    }
+    
+    .leaderboard-card {
+        max-width: 1000px;
+    }
+    
+    .certificate-container {
+        max-width: 1200px;
+    }
 }

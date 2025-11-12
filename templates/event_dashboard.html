@@ -8,17 +8,23 @@
         {% if event.time %} at {{ event.time.strftime('%I:%M %p') }}{% endif %}</p>
         {% if event.location %}<p class="text-muted">📍 {{ event.location }}</p>{% endif %}
     </div>
-    <div class="col-md-4 text-end">
-        <div class="btn-group" role="group">
+    <div class="col-md-4 text-end event-dashboard">
+        <div class="btn-group flex-wrap" role="group">
             <a href="{{ url_for('index') }}" class="btn btn-outline-primary">🏠 Home</a>
             <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-info">📤 Upload CSV</a>
             <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-success">📥 Export CSV</a>
             <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-warning">🏆 Certificates</a>
+            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary">🧠 Quiz</a>
+        </div>
+        <div class="mt-2">
+            <button type="button" class="btn btn-danger btn-sm" onclick="confirmDeleteEvent()">
+                🗑️ Delete Event
+            </button>
         </div>
     </div>
 </div>
 
-<div class="row mb-4">
+<div class="row mb-4 stats-row">
     <div class="col-md-3">
         <div class="card text-center bg-primary text-white">
             <div class="card-body">
@@ -86,10 +92,10 @@
                         <input type="checkbox" id="selectAll" class="form-check-input">
                     </th>
                     <th>Name</th>
-                    <th>Email</th>
-                    <th>Ticket #</th>
+                    <th class="d-none d-md-table-cell">Email</th>
+                    <th class="d-none d-lg-table-cell">Ticket #</th>
                     <th>Status</th>
-                    <th>Check-in Time</th>
+                    <th class="d-none d-md-table-cell">Check-in Time</th>
                     <th width="200">Actions</th>
                 </tr>
             </thead>
@@ -99,19 +105,25 @@
                         <td>
                             <input type="checkbox" name="participant_ids" value="{{ participant.id }}" class="form-check-input participant-checkbox">
                         </td>
-                        <td>{{ participant.name }}</td>
-                        <td>{{ participant.email }}</td>
-                        <td><code>{{ participant.ticket_number }}</code></td>
+                        <td>
+                            <div>{{ participant.name }}</div>
+                            <small class="d-md-none text-muted">{{ participant.email }}</small>
+                        </td>
+                        <td class="d-none d-md-table-cell">{{ participant.email }}</td>
+                        <td class="d-none d-lg-table-cell"><code>{{ participant.ticket_number }}</code></td>
                         <td>
                             {% if participant.checked_in %}
                                 <span class="badge bg-success">✓ Checked In</span>
                             {% else %}
                                 <span class="badge bg-warning">⏳ Pending</span>
                             {% endif %}
+                            <div class="d-md-none">
+                                <small class="text-muted">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</small>
+                            </div>
                         </td>
-                        <td>{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</td>
+                        <td class="d-none d-md-table-cell">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</td>
                         <td>
-                            <div class="btn-group btn-group-sm" role="group">
+                            <div class="participant-actions d-flex flex-wrap gap-1">
                                 <!-- Toggle Check-in/Check-out Button -->
                                 {% if participant.checked_in %}
                                     <button type="button" class="btn btn-success btn-sm" 
@@ -251,5 +263,25 @@ function confirmBulkAction(action) {
     
     return confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${selectedBoxes.length} selected participants?`);
 }
+
+// Delete event confirmation
+function confirmDeleteEvent() {
+    const eventName = "{{ event.name }}";
+    const participantCount = {{ stats.total }};
+    
+    if (confirm(`⚠️ WARNING: This will permanently delete the entire event "${eventName}" and ALL related data including:\n\n• ${participantCount} participants\n• All certificates\n• All attendance records\n• Event configuration\n\nThis action CANNOT be undone!\n\nType "DELETE" below to confirm:`)) {
+        const userInput = prompt('Type "DELETE" to confirm:');
+        if (userInput === 'DELETE') {
+            document.getElementById('deleteEventForm').submit();
+        } else {
+            alert('Event deletion cancelled - incorrect confirmation text.');
+        }
+    }
+}
 </script>
+
+<!-- Hidden form for event deletion -->
+<form id="deleteEventForm" method="POST" action="{{ url_for('delete_event', event_id=event.id) }}" style="display: none;">
+</form>
+
 {% endblock %}

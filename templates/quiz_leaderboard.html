@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Leaderboard - {{ quiz.title }}{% endblock %}
+
+{% block content %}
+<style>
+    body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+    }
+    
+    .leaderboard-container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin: 30px auto;
+        max-width: 900px;
+    }
+    
+    .leaderboard-header {
+        background: linear-gradient(45deg, #ffd700, #ffb347);
+        color: white;
+        padding: 40px 30px;
+        text-align: center;
+    }
+    
+    .trophy-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+        animation: float 3s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+    }
+    
+    .podium {
+        display: flex;
+        justify-content: center;
+        align-items: end;
+        padding: 40px 20px;
+        gap: 20px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        min-height: 300px;
+    }
+    
+    .podium-place {
+        text-align: center;
+        border-radius: 15px;
+        padding: 20px 15px;
+        color: white;
+        min-width: 120px;
+        position: relative;
+        transition: transform 0.3s ease;
+    }
+    
+    .podium-place:hover {
+        transform: translateY(-10px);
+    }
+    
+    .place-1 {
+        background: linear-gradient(45deg, #ffd700, #ffb347);
+        height: 200px;
+        order: 2;
+    }
+    
+    .place-2 {
+        background: linear-gradient(45deg, #c0c0c0, #a8a8a8);
+        height: 160px;
+        order: 1;
+    }
+    
+    .place-3 {
+        background: linear-gradient(45deg, #cd7f32, #a0522d);
+        height: 120px;
+        order: 3;
+    }
+    
+    .place-number {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .participant-name {
+        font-size: 1.1rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    }
+    
+    .participant-score {
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    
+    .participant-time {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    .crown {
+        position: absolute;
+        top: -15px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 2rem;
+        color: #ffd700;
+        filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.3));
+    }
+    
+    .full-leaderboard {
+        padding: 30px;
+    }
+    
+    .rank-row {
+        background: white;
+        border-radius: 10px;
+        margin: 10px 0;
+        padding: 15px 20px;
+        border-left: 4px solid #007bff;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .rank-row:hover {
+        transform: translateX(5px);
+    }
+    
+    .rank-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .rank-number {
+        background: #007bff;
+        color: white;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 1.1rem;
+    }
+    
+    .participant-details h6 {
+        margin: 0;
+        color: #333;
+    }
+    
+    .participant-details small {
+        color: #666;
+    }
+    
+    .rank-stats {
+        text-align: right;
+    }
+    
+    .rank-score {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #28a745;
+    }
+    
+    .rank-time {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    
+    .stats-summary {
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 30px;
+        margin: 30px 0;
+    }
+    
+    .stat-card {
+        text-align: center;
+        padding: 20px;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+    
+    .no-participants {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6c757d;
+    }
+    
+    .action-buttons {
+        text-align: center;
+        padding: 30px;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    /* Mobile optimizations */
+    @media (max-width: 768px) {
+        .leaderboard-container {
+            margin: 10px;
+        }
+        
+        .leaderboard-header {
+            padding: 30px 20px;
+        }
+        
+        .trophy-icon {
+            font-size: 3rem;
+        }
+        
+        .podium {
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            padding: 30px 20px;
+        }
+        
+        .podium-place {
+            width: 100%;
+            max-width: 250px;
+            height: auto !important;
+            padding: 25px 20px;
+        }
+        
+        .place-1 { order: 1; }
+        .place-2 { order: 2; }
+        .place-3 { order: 3; }
+        
+        .rank-row {
+            flex-direction: column;
+            text-align: center;
+            gap: 10px;
+        }
+        
+        .rank-info {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .full-leaderboard {
+            padding: 20px 15px;
+        }
+    }
+    
+    .refresh-btn {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        width: 60px;
+        height: 60px;
+        font-size: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0,123,255,0.3);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .refresh-btn:hover {
+        background: #0056b3;
+        transform: scale(1.1);
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="leaderboard-container">
+        <!-- Header -->
+        <div class="leaderboard-header">
+            <div class="trophy-icon">🏆</div>
+            <h1>{{ quiz.title }}</h1>
+            <p class="lead">{{ event.name }}</p>
+            <p class="mb-0">Quiz Results</p>
+        </div>
+        
+        <!-- Statistics Summary -->
+        <div class="stats-summary">
+            <div class="row">
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ leaderboard|length }}</div>
+                        <div class="stat-label">Participants</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ quiz.total_questions }}</div>
+                        <div class="stat-label">Questions</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card">
+                        <div class="stat-value">
+                            {% if leaderboard %}
+                                {{ "%.1f"|format(leaderboard|map(attribute='score')|sum / leaderboard|length) }}
+                            {% else %}
+                                0
+                            {% endif %}
+                        </div>
+                        <div class="stat-label">Average Score</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card">
+                        <div class="stat-value">
+                            {% if leaderboard %}
+                                {{ leaderboard[0].total_time_taken }}s
+                            {% else %}
+                                0s
+                            {% endif %}
+                        </div>
+                        <div class="stat-label">Best Time</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% if leaderboard %}
+            <!-- Top 3 Podium -->
+            {% if leaderboard|length >= 3 %}
+                <div class="podium">
+                    <!-- 2nd Place -->
+                    {% if leaderboard|length >= 2 %}
+                        <div class="podium-place place-2">
+                            <div class="place-number">2</div>
+                            <div class="participant-name">{{ leaderboard[1].participant.name }}</div>
+                            <div class="participant-score">{{ leaderboard[1].score }} pts</div>
+                            <div class="participant-time">{{ leaderboard[1].total_time_taken }}s</div>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- 1st Place -->
+                    <div class="podium-place place-1">
+                        <div class="crown">👑</div>
+                        <div class="place-number">1</div>
+                        <div class="participant-name">{{ leaderboard[0].participant.name }}</div>
+                        <div class="participant-score">{{ leaderboard[0].score }} pts</div>
+                        <div class="participant-time">{{ leaderboard[0].total_time_taken }}s</div>
+                    </div>
+                    
+                    <!-- 3rd Place -->
+                    {% if leaderboard|length >= 3 %}
+                        <div class="podium-place place-3">
+                            <div class="place-number">3</div>
+                            <div class="participant-name">{{ leaderboard[2].participant.name }}</div>
+                            <div class="participant-score">{{ leaderboard[2].score }} pts</div>
+                            <div class="participant-time">{{ leaderboard[2].total_time_taken }}s</div>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+            
+            <!-- Full Leaderboard -->
+            <div class="full-leaderboard">
+                <h4 class="mb-4">
+                    <i class="fas fa-list"></i> Complete Rankings
+                </h4>
+                
+                {% for attempt in leaderboard %}
+                    <div class="rank-row">
+                        <div class="rank-info">
+                            <div class="rank-number">{{ loop.index }}</div>
+                            <div class="participant-details">
+                                <h6>{{ attempt.participant.name }}</h6>
+                                <small>{{ attempt.participant.email }}</small>
+                            </div>
+                        </div>
+                        
+                        <div class="rank-stats">
+                            <div class="rank-score">{{ attempt.score }} pts</div>
+                            <div class="rank-time">
+                                {% set correct_count = attempt.quiz_answers|selectattr('is_correct')|list|length %}
+                                {{ correct_count }}/{{ quiz.total_questions }} correct • {{ attempt.total_time_taken }}s
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+            
+        {% else %}
+            <!-- No participants yet -->
+            <div class="no-participants">
+                <i class="fas fa-users fa-3x mb-3 text-muted"></i>
+                <h4>No participants yet</h4>
+                <p>Quiz results will appear here once participants complete the quiz.</p>
+            </div>
+        {% endif %}
+        
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary btn-lg me-3">
+                <i class="fas fa-chart-bar"></i> Quiz Dashboard
+            </a>
+            <a href="{{ url_for('event_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary btn-lg">
+                <i class="fas fa-arrow-left"></i> Back to Event
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-refresh button -->
+<button class="refresh-btn" onclick="location.reload();" title="Refresh Results">
+    <i class="fas fa-sync-alt"></i>
+</button>
+
+<!-- Auto-refresh script for live updates -->
+<script>
+    // Auto-refresh every 30 seconds if quiz is still active
+    {% if quiz.is_active %}
+        setInterval(function() {
+            // Only refresh if the page is visible
+            if (!document.hidden) {
+                location.reload();
+            }
+        }, 30000);
+    {% endif %}
+    
+    // Smooth scrolling for better UX
+    document.querySelectorAll('.rank-row').forEach(row => {
+        row.addEventListener('click', function() {
+            this.style.transform = 'scale(1.02)';
+            setTimeout(() => {
+                this.style.transform = '';
+            }, 200);
+        });
+    });
+</script>
+
+{% endblock %}

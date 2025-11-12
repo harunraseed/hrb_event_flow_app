@@ -22,8 +22,17 @@
                         <p class="card-text"><small>👥 {{ event.participants|length }} Participants</small></p>
                     </div>
                     <div class="card-footer bg-white">
-                        <a href="/event/{{ event.id }}/dashboard" class="btn btn-sm btn-primary">View Dashboard</a>
-                        <a href="/event/{{ event.id }}/export" class="btn btn-sm btn-outline-secondary">Export CSV</a>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <a href="/event/{{ event.id }}/dashboard" class="btn btn-sm btn-primary">View Dashboard</a>
+                                <a href="/event/{{ event.id }}/export" class="btn btn-sm btn-outline-secondary">Export CSV</a>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" 
+                                    onclick="confirmDeleteEventFromHome({{ event.id }}, '{{ event.name }}', {{ event.participants|length }})"
+                                    title="Delete Event">
+                                🗑️
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -35,4 +44,23 @@
         <p><a href="/create_event" class="btn btn-primary">Create your first event</a></p>
     </div>
 {% endif %}
+
+<script>
+function confirmDeleteEventFromHome(eventId, eventName, participantCount) {
+    if (confirm(`⚠️ WARNING: This will permanently delete "${eventName}" and ALL related data including:\n\n• ${participantCount} participants\n• All certificates\n• All attendance records\n\nThis action CANNOT be undone!\n\nType "DELETE" to confirm:`)) {
+        const userInput = prompt('Type "DELETE" to confirm:');
+        if (userInput === 'DELETE') {
+            // Create and submit a hidden form
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/event/${eventId}/delete`;
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        } else {
+            alert('Event deletion cancelled - incorrect confirmation text.');
+        }
+    }
+}
+</script>
 {% endblock %}

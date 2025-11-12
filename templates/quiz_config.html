@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Configuration - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-cog text-primary"></i> Quiz Configuration</h2>
+            <p class="text-muted">Configure quiz settings for <strong>{{ event.name }}</strong></p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Quiz Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Configuration Form -->
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Quiz Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        
+                        <!-- Basic Settings -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="title" class="form-label">Quiz Title *</label>
+                                {{ form.title(class="form-control") }}
+                                {% if form.title.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.title.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    {{ form.is_active(class="form-check-input") }}
+                                    <label class="form-check-label" for="is_active">
+                                        Quiz is Active
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Quiz Description</label>
+                            {{ form.description(class="form-control", rows="3", placeholder="Optional description for participants") }}
+                        </div>
+
+                        <!-- Timing Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-clock"></i> Timing Settings</h6>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="time_per_question" class="form-label">Time Per Question (seconds) *</label>
+                                {{ form.time_per_question(class="form-control") }}
+                                <small class="text-muted">How long each question should be displayed</small>
+                                {% if form.time_per_question.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.time_per_question.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="total_time_limit" class="form-label">Total Time Limit (seconds)</label>
+                                {{ form.total_time_limit(class="form-control", placeholder="Optional - leave empty for no limit") }}
+                                <small class="text-muted">Maximum time for entire quiz (optional)</small>
+                            </div>
+                        </div>
+
+                        <!-- Participant Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-users"></i> Participant Settings</h6>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="participant_limit" class="form-label">Maximum Participants *</label>
+                                {{ form.participant_limit(class="form-control") }}
+                                <small class="text-muted">Limit the number of participants (1-1000)</small>
+                                {% if form.participant_limit.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.participant_limit.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <div class="participant-info mt-4">
+                                    <small class="text-info">
+                                        <i class="fas fa-info-circle"></i> 
+                                        Current participants: <strong>{{ quiz.current_participants }}</strong>
+                                        {% if quiz.current_participants > 0 %}
+                                            <br>Available spots: <strong>{{ quiz.available_spots }}</strong>
+                                        {% endif %}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Display Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-eye"></i> Display Settings</h6>
+                        <div class="mb-4">
+                            <div class="form-check">
+                                {{ form.show_leaderboard(class="form-check-input") }}
+                                <label class="form-check-label" for="show_leaderboard">
+                                    Show Leaderboard
+                                </label>
+                                <small class="form-text text-muted d-block">Display results and ranking to participants</small>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid gap-2">
+                            {{ form.submit(class="btn btn-primary btn-lg") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Preview Card -->
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fas fa-eye"></i> Preview</h6>
+                </div>
+                <div class="card-body">
+                    <h5 id="preview-title">{{ form.title.data or "Event Quiz" }}</h5>
+                    <p class="text-muted" id="preview-description">{{ form.description.data or "No description provided" }}</p>
+                    
+                    <hr>
+                    
+                    <div class="small">
+                        <p><strong>Time per Question:</strong> <span id="preview-time">{{ form.time_per_question.data or 30 }}</span> seconds</p>
+                        {% if form.total_time_limit.data %}
+                        <p><strong>Total Time Limit:</strong> <span id="preview-total-time">{{ form.total_time_limit.data }}</span> seconds</p>
+                        {% endif %}
+                        <p><strong>Leaderboard:</strong> 
+                            <span id="preview-leaderboard">{{ "Enabled" if form.show_leaderboard.data else "Disabled" }}</span>
+                        </p>
+                        <p><strong>Status:</strong> 
+                            <span id="preview-status" class="badge bg-{{ 'success' if form.is_active.data else 'secondary' }}">
+                                {{ "Active" if form.is_active.data else "Inactive" }}
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card mt-3">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="fas fa-info-circle"></i> Quiz Tips</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0">
+                        <li><strong>Fastest Fingers First:</strong> The quiz rewards quick, accurate answers</li>
+                        <li><strong>Time per Question:</strong> 15-45 seconds works well for most questions</li>
+                        <li><strong>Total Time Limit:</strong> Use only if you want to enforce an overall deadline</li>
+                        <li><strong>Active Status:</strong> Only active quizzes allow participant entry</li>
+                        <li><strong>Leaderboard:</strong> Shows top 3 winners and full rankings</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Live preview updates
+document.addEventListener('DOMContentLoaded', function() {
+    const titleInput = document.getElementById('title');
+    const descInput = document.getElementById('description');
+    const timeInput = document.getElementById('time_per_question');
+    const totalTimeInput = document.getElementById('total_time_limit');
+    const leaderboardInput = document.getElementById('show_leaderboard');
+    const activeInput = document.getElementById('is_active');
+    
+    // Update preview on input
+    if (titleInput) {
+        titleInput.addEventListener('input', function() {
+            document.getElementById('preview-title').textContent = this.value || 'Event Quiz';
+        });
+    }
+    
+    if (descInput) {
+        descInput.addEventListener('input', function() {
+            document.getElementById('preview-description').textContent = this.value || 'No description provided';
+        });
+    }
+    
+    if (timeInput) {
+        timeInput.addEventListener('input', function() {
+            document.getElementById('preview-time').textContent = this.value || '30';
+        });
+    }
+    
+    if (leaderboardInput) {
+        leaderboardInput.addEventListener('change', function() {
+            document.getElementById('preview-leaderboard').textContent = this.checked ? 'Enabled' : 'Disabled';
+        });
+    }
+    
+    if (activeInput) {
+        activeInput.addEventListener('change', function() {
+            const statusSpan = document.getElementById('preview-status');
+            statusSpan.textContent = this.checked ? 'Active' : 'Inactive';
+            statusSpan.className = 'badge bg-' + (this.checked ? 'success' : 'secondary');
+        });
+    }
+});
+</script>
+{% endblock %}

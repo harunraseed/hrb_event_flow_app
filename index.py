@@ -5,8 +5,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField, SelectField
-from wtforms.validators import DataRequired, Length, Optional, URL, Email
+from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField, SelectField, IntegerField
+from wtforms.validators import DataRequired, Length, Optional, URL, Email, NumberRange
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import csv
@@ -14,6 +14,10 @@ import io
 import base64
 from uuid import uuid4
 from utils.storage import StorageManager
+from utils.quiz_performance import (
+    QuizPerformanceManager, QuizStatsCollector, QuizQueryOptimizer,
+    prevent_double_submission, rate_limit_quiz_joins
+)
 import tempfile
 import pdfkit
 
@@ -53,6 +57,15 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 
 db = SQLAlchemy(app)
 mail = Mail(app)
+
+# Initialize performance manager for high-concurrency quiz support
+quiz_performance = QuizPerformanceManager()
+quiz_performance.init_app(app)
+app.extensions['quiz_performance'] = quiz_performance
+
+# Initialize quiz stats collector
+quiz_stats = QuizStatsCollector(quiz_performance.redis_client)
+
 # Temporarily disable CSRF for development
 # csrf = CSRFProtect(app)
 
@@ -165,6 +178,36 @@ class CertificateConfigForm(FlaskForm):
     send_to_all_checked_in = BooleanField('Send to all checked-in participants', default=True)
     
     submit = SubmitField('Save Configuration')
+
+# Quiz Forms
+class QuizConfigForm(FlaskForm):
+    title = StringField('Quiz Title', validators=[DataRequired(), Length(min=1, max=200)], default='Event Quiz')
+    description = TextAreaField('Quiz Description', validators=[Optional()])
+    time_per_question = IntegerField('Time Per Question (seconds)', validators=[DataRequired(), NumberRange(min=5, max=300)], default=30)
+    total_time_limit = IntegerField('Total Time Limit (seconds - optional)', validators=[Optional(), NumberRange(min=60)])
+    participant_limit = IntegerField('Maximum Participants', validators=[DataRequired(), NumberRange(min=1, max=1000)], default=100)
+    is_active = BooleanField('Quiz is Active', default=False)
+    show_leaderboard = BooleanField('Show Leaderboard', default=True)
+    submit = SubmitField('Save Quiz Configuration')
+
+class QuizQuestionForm(FlaskForm):
+    question_text = TextAreaField('Question Text', validators=[DataRequired(), Length(min=1, max=1000)])
+    option_a = StringField('Option A', validators=[DataRequired(), Length(min=1, max=500)])
+    option_b = StringField('Option B', validators=[DataRequired(), Length(min=1, max=500)])
+    option_c = StringField('Option C', validators=[DataRequired(), Length(min=1, max=500)])
+    option_d = StringField('Option D', validators=[DataRequired(), Length(min=1, max=500)])
+    correct_answer = SelectField('Correct Answer', 
+                                choices=[('A', 'Option A'), ('B', 'Option B'), ('C', 'Option C'), ('D', 'Option D')],
+                                validators=[DataRequired()])
+    points = IntegerField('Points', validators=[Optional(), NumberRange(min=1, max=10)], default=1)
+    time_limit = IntegerField('Time Limit (seconds - override default)', validators=[Optional(), NumberRange(min=5, max=300)])
+    submit = SubmitField('Add Question')
+
+class QuizUploadForm(FlaskForm):
+    csv_file = FileField('Upload Questions CSV', 
+                        validators=[DataRequired(), FileAllowed(['csv'], 'CSV files only!')],
+                        render_kw={"accept": ".csv"})
+    submit = SubmitField('Upload Questions')
 
 # Database Models
 class Event(db.Model):
@@ -313,6 +356,189 @@ class CertificateConfig(db.Model):
     
     def __repr__(self):
         return f'<CertificateConfig for {self.event.name}>'
+
+# Quiz Models
+class Quiz(db.Model):
+    __tablename__ = 'quizzes'
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False, unique=True)
+    
+    # Quiz configuration
+    title = db.Column(db.String(200), nullable=False, default='Event Quiz')
+    description = db.Column(db.Text)
+    time_per_question = db.Column(db.Integer, default=30)  # seconds per question
+    total_time_limit = db.Column(db.Integer)  # total quiz time in seconds (optional)
+    participant_limit = db.Column(db.Integer, default=100)  # maximum participants allowed
+    is_active = db.Column(db.Boolean, default=False)
+    show_leaderboard = db.Column(db.Boolean, default=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    quiz_start_time = db.Column(db.DateTime)  # When quiz actually starts
+    quiz_end_time = db.Column(db.DateTime)    # When quiz ends
+    
+    # Relationships
+    event = db.relationship('Event', backref=db.backref('quiz', uselist=False))
+    questions = db.relationship('QuizQuestion', backref='quiz', lazy=True, cascade='all, delete-orphan')
+    attempts = db.relationship('QuizAttempt', backref='quiz', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Quiz {self.title} for {self.event.name}>'
+    
+    @property
+    def total_questions(self):
+        return len(self.questions)
+    
+    @property
+    def current_participants(self):
+        """Get current number of participants who have joined the quiz"""
+        return len(self.attempts)
+    
+    @property
+    def is_full(self):
+        """Check if quiz has reached participant limit"""
+        return self.current_participants >= self.participant_limit
+    
+    @property
+    def available_spots(self):
+        """Get number of available spots remaining"""
+        return max(0, self.participant_limit - self.current_participants)
+    
+    @property
+    def is_started(self):
+        return self.quiz_start_time is not None
+    
+    @property
+    def is_ended(self):
+        return self.quiz_end_time is not None
+    
+    @property
+    def leaderboard_data(self):
+        """Get top participants with scores - improved sorting"""
+        from sqlalchemy import desc
+        
+        # Get all attempts with participant info, ordered properly
+        attempts = QuizAttempt.query.filter_by(quiz_id=self.id, is_completed=True)\
+            .join(Participant)\
+            .order_by(desc(QuizAttempt.score), QuizAttempt.total_time_taken.asc(), QuizAttempt.completed_at.asc())\
+            .all()
+        
+        return attempts[:50]  # Top 50 for full leaderboard
+    
+    @property
+    def live_leaderboard_data(self):
+        """Get live leaderboard including in-progress attempts"""
+        from sqlalchemy import desc
+        
+        # Get all attempts (completed and in-progress) with participant info
+        attempts = QuizAttempt.query.filter_by(quiz_id=self.id)\
+            .join(Participant)\
+            .order_by(desc(QuizAttempt.score), QuizAttempt.current_question.desc(), QuizAttempt.total_time_taken.asc())\
+            .all()
+        
+        return attempts[:50]  # Top 50 for game master view
+
+class QuizQuestion(db.Model):
+    __tablename__ = 'quiz_questions'
+    id = db.Column(db.Integer, primary_key=True)
+    quiz_id = db.Column(db.Integer, db.ForeignKey('quizzes.id'), nullable=False)
+    
+    # Question details
+    question_text = db.Column(db.Text, nullable=False)
+    question_order = db.Column(db.Integer, nullable=False)
+    
+    # Options (stored as JSON or separate fields)
+    option_a = db.Column(db.String(500))
+    option_b = db.Column(db.String(500))
+    option_c = db.Column(db.String(500))
+    option_d = db.Column(db.String(500))
+    
+    # Correct answer (A, B, C, or D)
+    correct_answer = db.Column(db.String(1), nullable=False)
+    
+    # Additional settings
+    points = db.Column(db.Integer, default=1)
+    time_limit = db.Column(db.Integer)  # Override quiz default time per question
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    answers = db.relationship('QuizAnswer', backref='question', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<QuizQuestion {self.question_order}: {self.question_text[:50]}...>'
+    
+    @property
+    def options(self):
+        """Return options as a dictionary"""
+        return {
+            'A': self.option_a,
+            'B': self.option_b,
+            'C': self.option_c,
+            'D': self.option_d
+        }
+    
+    @property
+    def effective_time_limit(self):
+        """Get time limit for this question (use question-specific or quiz default)"""
+        return self.time_limit or self.quiz.time_per_question
+
+class QuizAttempt(db.Model):
+    __tablename__ = 'quiz_attempts'
+    id = db.Column(db.Integer, primary_key=True)
+    quiz_id = db.Column(db.Integer, db.ForeignKey('quizzes.id'), nullable=False)
+    participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=False)
+    
+    # Attempt details
+    started_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime)
+    current_question = db.Column(db.Integer, default=1)
+    score = db.Column(db.Integer, default=0)
+    is_completed = db.Column(db.Boolean, default=False)
+    
+    # Time tracking
+    total_time_taken = db.Column(db.Integer, default=0)  # in seconds
+    
+    # Relationships
+    participant = db.relationship('Participant', backref='quiz_attempts')
+    answers = db.relationship('QuizAnswer', backref='attempt', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<QuizAttempt by {self.participant.name} for {self.quiz.title}>'
+    
+    @property
+    def accuracy_percentage(self):
+        """Calculate accuracy percentage"""
+        if not self.answers:
+            return 0
+        correct_answers = sum(1 for answer in self.answers if answer.is_correct)
+        return round((correct_answers / len(self.answers)) * 100, 2)
+    
+    @property
+    def rank_position(self):
+        """Get rank position in leaderboard"""
+        leaderboard = self.quiz.leaderboard_data
+        for i, attempt in enumerate(leaderboard):
+            if attempt.id == self.id:
+                return i + 1
+        return None
+
+class QuizAnswer(db.Model):
+    __tablename__ = 'quiz_answers'
+    id = db.Column(db.Integer, primary_key=True)
+    attempt_id = db.Column(db.Integer, db.ForeignKey('quiz_attempts.id'), nullable=False)
+    question_id = db.Column(db.Integer, db.ForeignKey('quiz_questions.id'), nullable=False)
+    
+    # Answer details
+    selected_answer = db.Column(db.String(1))  # A, B, C, or D
+    is_correct = db.Column(db.Boolean, default=False)
+    time_taken = db.Column(db.Integer)  # seconds taken to answer
+    answered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    def __repr__(self):
+        return f'<QuizAnswer {self.selected_answer} for Question {self.question.question_order}>'
 
 # Add property to Event model for certificate status
 @property
@@ -476,6 +702,52 @@ def event_dashboard(event_id):
     }
     
     return render_template('event_dashboard.html', event=event, participants=participants, stats=stats)
+
+@app.route('/event/<int:event_id>/delete', methods=['POST'])
+def delete_event(event_id):
+    """Delete an event and all associated data"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        event_name = event.name  # Store name before deletion
+        
+        # Get all participants for this event
+        participants = Participant.query.filter_by(event_id=event_id).all()
+        
+        # Delete associated data in correct order (due to foreign key constraints)
+        
+        # 1. Delete quiz answers first
+        for participant in participants:
+            quiz_attempts = QuizAttempt.query.filter_by(participant_id=participant.id).all()
+            for attempt in quiz_attempts:
+                QuizAnswer.query.filter_by(attempt_id=attempt.id).delete()
+                db.session.delete(attempt)
+        
+        # 2. Delete quiz questions and quizzes
+        quizzes = Quiz.query.filter_by(event_id=event_id).all()
+        for quiz in quizzes:
+            QuizQuestion.query.filter_by(quiz_id=quiz.id).delete()
+            db.session.delete(quiz)
+        
+        # 3. Delete certificates
+        for participant in participants:
+            Certificate.query.filter_by(participant_id=participant.id).delete()
+        
+        # 4. Delete participants
+        for participant in participants:
+            db.session.delete(participant)
+        
+        # 5. Finally delete the event
+        db.session.delete(event)
+        
+        db.session.commit()
+        
+        flash(f'Event "{event_name}" and all associated data deleted successfully!', 'success')
+        return redirect(url_for('index'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting event: {str(e)}', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/participants/bulk_delete', methods=['POST'])
 def bulk_delete_participants_alt():
@@ -1719,6 +1991,678 @@ with app.app_context():
         print("🗃️ Database tables created/verified (existing data preserved)")
     except Exception as e:
         print(f"Warning: Could not create database tables: {e}")
+
+# Quiz Routes
+@app.route('/event/<int:event_id>/quiz')
+def quiz_dashboard(event_id):
+    """Quiz management dashboard"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        quiz = Quiz(event_id=event_id, title=f'{event.name} Quiz')
+        db.session.add(quiz)
+        db.session.commit()
+    
+    questions = QuizQuestion.query.filter_by(quiz_id=quiz.id).order_by(QuizQuestion.question_order).all()
+    attempts = QuizAttempt.query.filter_by(quiz_id=quiz.id).all()
+    
+    # Get statistics
+    stats = {
+        'total_questions': len(questions),
+        'total_attempts': len(attempts),
+        'completed_attempts': len([a for a in attempts if a.is_completed]),
+        'average_score': round(sum(a.score for a in attempts if a.is_completed) / max(len([a for a in attempts if a.is_completed]), 1), 2)
+    }
+    
+    return render_template('quiz_dashboard.html', event=event, quiz=quiz, questions=questions, attempts=attempts, stats=stats)
+
+@app.route('/event/<int:event_id>/quiz/config', methods=['GET', 'POST'])
+def quiz_config(event_id):
+    """Configure quiz settings"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        quiz = Quiz(event_id=event_id)
+        db.session.add(quiz)
+        db.session.commit()
+    
+    form = QuizConfigForm(obj=quiz)
+    
+    if form.validate_on_submit():
+        try:
+            form.populate_obj(quiz)
+            quiz.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            
+            flash('Quiz configuration saved successfully!', 'success')
+            return redirect(url_for('quiz_dashboard', event_id=event_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error saving quiz configuration: {str(e)}', 'error')
+    
+    return render_template('quiz_config.html', event=event, quiz=quiz, form=form)
+
+@app.route('/event/<int:event_id>/quiz/questions/add', methods=['GET', 'POST'])
+def add_quiz_question(event_id):
+    """Add a new quiz question manually"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('Please configure the quiz first.', 'error')
+        return redirect(url_for('quiz_config', event_id=event_id))
+    
+    form = QuizQuestionForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Get next question order
+            last_question = QuizQuestion.query.filter_by(quiz_id=quiz.id).order_by(QuizQuestion.question_order.desc()).first()
+            next_order = (last_question.question_order + 1) if last_question else 1
+            
+            question = QuizQuestion(
+                quiz_id=quiz.id,
+                question_text=form.question_text.data,
+                question_order=next_order,
+                option_a=form.option_a.data,
+                option_b=form.option_b.data,
+                option_c=form.option_c.data,
+                option_d=form.option_d.data,
+                correct_answer=form.correct_answer.data,
+                points=form.points.data or 1,
+                time_limit=form.time_limit.data
+            )
+            
+            db.session.add(question)
+            db.session.commit()
+            
+            flash('Question added successfully!', 'success')
+            return redirect(url_for('quiz_dashboard', event_id=event_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding question: {str(e)}', 'error')
+    
+    return render_template('add_quiz_question.html', event=event, quiz=quiz, form=form)
+
+@app.route('/event/<int:event_id>/quiz/questions/upload', methods=['GET', 'POST'])
+def upload_quiz_questions(event_id):
+    """Upload quiz questions via CSV"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('Please configure the quiz first.', 'error')
+        return redirect(url_for('quiz_config', event_id=event_id))
+    
+    form = QuizUploadForm()
+    
+    if form.validate_on_submit():
+        try:
+            csv_file = form.csv_file.data
+            stream = io.StringIO(csv_file.stream.read().decode("UTF8"), newline=None)
+            csv_input = csv.reader(stream)
+            
+            # Skip header row
+            next(csv_input)
+            
+            questions_added = 0
+            current_order = QuizQuestion.query.filter_by(quiz_id=quiz.id).count() + 1
+            
+            for row in csv_input:
+                if len(row) < 6:  # question, option_a, option_b, option_c, option_d, correct_answer
+                    continue
+                
+                question_text = row[0].strip()
+                option_a = row[1].strip()
+                option_b = row[2].strip() 
+                option_c = row[3].strip()
+                option_d = row[4].strip()
+                correct_answer = row[5].strip().upper()
+                
+                # Optional fields
+                points = int(row[6]) if len(row) > 6 and row[6].strip().isdigit() else 1
+                time_limit = int(row[7]) if len(row) > 7 and row[7].strip().isdigit() else None
+                
+                if not all([question_text, option_a, option_b, option_c, option_d, correct_answer]):
+                    continue
+                
+                if correct_answer not in ['A', 'B', 'C', 'D']:
+                    continue
+                
+                question = QuizQuestion(
+                    quiz_id=quiz.id,
+                    question_text=question_text,
+                    question_order=current_order,
+                    option_a=option_a,
+                    option_b=option_b,
+                    option_c=option_c,
+                    option_d=option_d,
+                    correct_answer=correct_answer,
+                    points=points,
+                    time_limit=time_limit
+                )
+                
+                db.session.add(question)
+                questions_added += 1
+                current_order += 1
+            
+            db.session.commit()
+            flash(f'Successfully uploaded {questions_added} questions!', 'success')
+            return redirect(url_for('quiz_dashboard', event_id=event_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error uploading questions: {str(e)}', 'error')
+    
+    return render_template('upload_quiz_questions.html', event=event, quiz=quiz, form=form)
+
+@app.route('/event/<int:event_id>/quiz/questions/<int:question_id>/delete', methods=['POST'])
+def delete_quiz_question(event_id, question_id):
+    """Delete a quiz question"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        question = QuizQuestion.query.get_or_404(question_id)
+        
+        if question.quiz.event_id != event_id:
+            return jsonify({'success': False, 'error': 'Question not found'}), 404
+        
+        db.session.delete(question)
+        db.session.commit()
+        
+        flash('Question deleted successfully!', 'success')
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/delete', methods=['POST'])
+def delete_quiz(event_id):
+    """Delete the entire quiz and all related data"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        quiz_title = quiz.title
+        
+        # Delete in proper order to avoid foreign key constraints
+        # 1. Delete quiz answers first
+        attempts = QuizAttempt.query.filter_by(quiz_id=quiz.id).all()
+        for attempt in attempts:
+            QuizAnswer.query.filter_by(attempt_id=attempt.id).delete()
+            db.session.delete(attempt)
+        
+        # 2. Delete quiz questions
+        QuizQuestion.query.filter_by(quiz_id=quiz.id).delete()
+        
+        # 3. Delete the quiz itself
+        db.session.delete(quiz)
+        
+        db.session.commit()
+        
+        flash(f'Quiz "{quiz_title}" and all related data deleted successfully!', 'success')
+        return jsonify({'success': True, 'message': f'Quiz "{quiz_title}" deleted successfully!'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/reset', methods=['POST'])
+def reset_quiz(event_id):
+    """Reset quiz data (delete all attempts and answers, keep questions)"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        # Count attempts before deletion for feedback
+        attempts = QuizAttempt.query.filter_by(quiz_id=quiz.id).all()
+        attempt_count = len(attempts)
+        
+        # Delete quiz answers and attempts, but keep questions and quiz configuration
+        for attempt in attempts:
+            QuizAnswer.query.filter_by(attempt_id=attempt.id).delete()
+            db.session.delete(attempt)
+        
+        # Reset quiz state
+        quiz.is_active = False
+        quiz.quiz_start_time = None
+        quiz.quiz_end_time = None
+        quiz.updated_at = datetime.now(timezone.utc)
+        
+        db.session.commit()
+        
+        flash(f'Quiz reset successfully! Removed {attempt_count} participant attempts.', 'success')
+        return jsonify({
+            'success': True, 
+            'message': f'Quiz reset successfully! Removed {attempt_count} participant attempts.',
+            'attempts_removed': attempt_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/start', methods=['POST'])
+def start_quiz(event_id):
+    """Start the quiz (admin function)"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        if not quiz.questions:
+            return jsonify({'success': False, 'error': 'No questions added to quiz'}), 400
+        
+        quiz.quiz_start_time = datetime.now(timezone.utc)
+        quiz.is_active = True
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Quiz started successfully!'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/end', methods=['POST'])
+def end_quiz(event_id):
+    """End the quiz (admin function)"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        quiz.quiz_end_time = datetime.now(timezone.utc)
+        quiz.is_active = False
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Quiz ended successfully!'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/play')
+def play_quiz(event_id):
+    """Main quiz interface for participants"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('Quiz not found.', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    if not quiz.is_active:
+        flash('Quiz is not currently active.', 'warning')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    if quiz.is_ended:
+        flash('Quiz has ended. Check the leaderboard for results.', 'info')
+        return redirect(url_for('quiz_leaderboard', event_id=event_id))
+    
+    return render_template('play_quiz.html', event=event, quiz=quiz)
+
+@app.route('/event/<int:event_id>/quiz/join', methods=['POST'])
+@rate_limit_quiz_joins(max_joins_per_minute=50)  # Allow up to 50 joins per minute per IP
+def join_quiz(event_id):
+    """Join quiz as a participant - Optimized for high concurrency"""
+    try:
+        data = request.get_json()
+        participant_email = data.get('email')
+        participant_name = data.get('name')
+        
+        if not participant_email:
+            return jsonify({'success': False, 'error': 'Email is required'}), 400
+        
+        event = Event.query.get_or_404(event_id)
+        
+        # Use cached quiz data if available
+        cached_quiz = quiz_performance.get_cached_quiz_data(event_id)
+        if cached_quiz and cached_quiz.get('is_active'):
+            quiz_id = cached_quiz['quiz_id']
+            quiz = Quiz.query.get(quiz_id)
+        else:
+            quiz = Quiz.query.filter_by(event_id=event_id).first()
+            if quiz:
+                # Cache quiz data for faster subsequent requests
+                quiz_cache_data = {
+                    'quiz_id': quiz.id,
+                    'is_active': quiz.is_active,
+                    'title': quiz.title,
+                    'total_questions': quiz.total_questions
+                }
+                quiz_performance.cache_quiz_data(event_id, quiz_cache_data)
+        
+        if not quiz or not quiz.is_active:
+            return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
+        
+        # Check participant limit before allowing new participants
+        if quiz.is_full:
+            return jsonify({
+                'success': False, 
+                'error': f'Quiz is full! Maximum {quiz.participant_limit} participants allowed.'
+            }), 400
+        
+        # Record participation for stats
+        quiz_stats.record_participation(quiz.id, 'join')
+        
+        # Optimized participant lookup/creation
+        participant = Participant.query.filter_by(
+            email=participant_email, 
+            event_id=event_id
+        ).with_for_update().first()  # Lock for update to prevent race conditions
+        
+        if not participant:
+            if not participant_name:
+                return jsonify({'success': False, 'error': 'Name is required for new participants'}), 400
+            
+            participant = Participant(
+                name=participant_name,
+                email=participant_email,
+                event_id=event_id,
+                checked_in=True  # Auto check-in quiz participants
+            )
+            db.session.add(participant)
+            db.session.flush()
+        
+        # Check for existing attempt with optimized query
+        existing_attempt = QuizAttempt.query.filter_by(
+            quiz_id=quiz.id,
+            participant_id=participant.id
+        ).first()
+        
+        if existing_attempt:
+            if existing_attempt.is_completed:
+                return jsonify({'success': False, 'error': 'You have already completed this quiz'}), 400
+            else:
+                # Resume existing attempt
+                attempt = existing_attempt
+        else:
+            # Double-check participant limit before creating new attempt (race condition protection)
+            current_attempt_count = QuizAttempt.query.filter_by(quiz_id=quiz.id).count()
+            if current_attempt_count >= quiz.participant_limit:
+                return jsonify({
+                    'success': False, 
+                    'error': f'Quiz is full! Maximum {quiz.participant_limit} participants allowed.'
+                }), 400
+            
+            # Create new attempt
+            attempt = QuizAttempt(
+                quiz_id=quiz.id,
+                participant_id=participant.id
+            )
+            db.session.add(attempt)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'attempt_id': attempt.id,
+            'participant_id': participant.id,
+            'current_question': attempt.current_question
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/quiz/attempt/<int:attempt_id>/question')
+def get_quiz_question(attempt_id):
+    """Get current question for quiz attempt"""
+    try:
+        attempt = QuizAttempt.query.get_or_404(attempt_id)
+        quiz = attempt.quiz
+        
+        if not quiz.is_active or quiz.is_ended:
+            return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
+        
+        # Get current question
+        question = QuizQuestion.query.filter_by(
+            quiz_id=quiz.id,
+            question_order=attempt.current_question
+        ).first()
+        
+        if not question:
+            # No more questions, complete the attempt
+            attempt.is_completed = True
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'completed': True,
+                'score': attempt.score,
+                'total_questions': quiz.total_questions
+            })
+        
+        return jsonify({
+            'success': True,
+            'question': {
+                'id': question.id,
+                'question_text': question.question_text,
+                'options': question.options,
+                'question_number': question.question_order,
+                'total_questions': quiz.total_questions,
+                'time_limit': question.effective_time_limit
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/quiz/attempt/<int:attempt_id>/answer', methods=['POST'])
+def submit_quiz_answer(attempt_id):
+    """Submit answer for quiz question - Optimized with anti-double-submission"""
+    try:
+        data = request.get_json()
+        selected_answer = data.get('answer')
+        time_taken = data.get('time_taken', 0)
+        
+        # Get performance manager for locking
+        perf_manager = app.extensions.get('quiz_performance')
+        
+        attempt = QuizAttempt.query.get_or_404(attempt_id)
+        
+        # Get current question
+        question = QuizQuestion.query.filter_by(
+            quiz_id=attempt.quiz_id,
+            question_order=attempt.current_question
+        ).first()
+        
+        if not question:
+            return jsonify({'success': False, 'error': 'Question not found'}), 404
+        
+        # Use lock to prevent double submissions for high concurrency
+        if perf_manager:
+            answer_lock = perf_manager.get_answer_lock(attempt.id, question.id)
+            if not answer_lock.acquire(blocking=False):
+                return jsonify({
+                    'success': False, 
+                    'error': 'Answer submission in progress, please wait'
+                }), 429
+        else:
+            answer_lock = None
+        
+        try:
+            # Check if answer already exists (with database lock)
+            existing_answer = QuizAnswer.query.filter_by(
+                attempt_id=attempt.id,
+                question_id=question.id
+            ).with_for_update().first()
+            
+            if existing_answer:
+                return jsonify({'success': False, 'error': 'Answer already submitted'}), 400
+            
+            # Create answer record
+            is_correct = selected_answer == question.correct_answer
+            answer = QuizAnswer(
+                attempt_id=attempt.id,
+                question_id=question.id,
+                selected_answer=selected_answer,
+                is_correct=is_correct,
+                time_taken=time_taken
+            )
+            
+            db.session.add(answer)
+            
+            # Update score and move to next question
+            if is_correct:
+                attempt.score += question.points
+            
+            attempt.current_question += 1
+            attempt.total_time_taken += time_taken
+            
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'correct': is_correct,
+                'correct_answer': question.correct_answer,
+                'current_score': attempt.score
+            })
+            
+        finally:
+            # Always release the lock
+            if answer_lock:
+                answer_lock.release()
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/leaderboard')
+def quiz_leaderboard(event_id):
+    """Show quiz leaderboard"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('Quiz not found.', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    leaderboard = quiz.leaderboard_data
+    
+    return render_template('quiz_leaderboard.html', event=event, quiz=quiz, leaderboard=leaderboard)
+
+@app.route('/event/<int:event_id>/quiz/gamemaster')
+def quiz_gamemaster(event_id):
+    """Game master dashboard with live updates"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('Quiz not found.', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    return render_template('quiz_gamemaster.html', event=event, quiz=quiz)
+
+@app.route('/api/quiz/<int:quiz_id>/live-leaderboard')
+def quiz_live_leaderboard_api(quiz_id):
+    """API endpoint for live leaderboard updates"""
+    try:
+        quiz = Quiz.query.get_or_404(quiz_id)
+        attempts = quiz.live_leaderboard_data
+        
+        leaderboard_data = []
+        for i, attempt in enumerate(attempts, 1):
+            participant = attempt.participant
+            
+            # Calculate progress percentage
+            progress = (attempt.current_question - 1) / max(quiz.total_questions, 1) * 100
+            
+            leaderboard_data.append({
+                'rank': i,
+                'participant_name': participant.name,
+                'participant_email': participant.email,
+                'score': attempt.score,
+                'current_question': attempt.current_question,
+                'total_questions': quiz.total_questions,
+                'progress_percentage': round(progress, 1),
+                'total_time_taken': attempt.total_time_taken,
+                'is_completed': attempt.is_completed,
+                'completion_time': attempt.completed_at.strftime('%H:%M:%S') if attempt.completed_at else None,
+                'status': 'Completed' if attempt.is_completed else f'Question {attempt.current_question}/{quiz.total_questions}'
+            })
+        
+        return jsonify({
+            'success': True,
+            'quiz_id': quiz_id,
+            'quiz_title': quiz.title,
+            'quiz_status': {
+                'is_active': quiz.is_active,
+                'is_started': quiz.is_started,
+                'is_ended': quiz.is_ended,
+                'total_questions': quiz.total_questions,
+                'current_participants': quiz.current_participants,
+                'participant_limit': quiz.participant_limit
+            },
+            'leaderboard': leaderboard_data,
+            'last_updated': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/quiz/<int:quiz_id>/live-stats')
+def quiz_live_stats(quiz_id):
+    """Get live quiz statistics for monitoring"""
+    try:
+        quiz = Quiz.query.get_or_404(quiz_id)
+        
+        # Get live stats from Redis (if available)
+        live_stats = quiz_stats.get_live_stats(quiz_id)
+        
+        # Get database stats for backup
+        total_attempts = QuizAttempt.query.filter_by(quiz_id=quiz_id).count()
+        completed_attempts = QuizAttempt.query.filter_by(quiz_id=quiz_id, is_completed=True).count()
+        
+        # Average score calculation
+        from sqlalchemy import func
+        avg_score_result = db.session.query(func.avg(QuizAttempt.score)).filter_by(
+            quiz_id=quiz_id, 
+            is_completed=True
+        ).scalar()
+        avg_score = round(float(avg_score_result), 2) if avg_score_result else 0
+        
+        stats = {
+            'quiz_id': quiz_id,
+            'quiz_title': quiz.title,
+            'is_active': quiz.is_active,
+            'total_questions': quiz.total_questions,
+            'participant_limit': quiz.participant_limit,
+            'current_participants': quiz.current_participants,
+            'available_spots': quiz.available_spots,
+            'is_full': quiz.is_full,
+            'live_stats': live_stats,
+            'database_stats': {
+                'total_attempts': total_attempts,
+                'completed_attempts': completed_attempts,
+                'completion_rate': round((completed_attempts / total_attempts * 100), 2) if total_attempts > 0 else 0,
+                'average_score': avg_score
+            },
+            'performance_metrics': {
+                'concurrent_submissions': len(quiz_performance.answer_locks) if quiz_performance else 0,
+                'cache_available': quiz_performance.redis_client is not None if quiz_performance else False
+            }
+        }
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Export for Vercel
 application = app

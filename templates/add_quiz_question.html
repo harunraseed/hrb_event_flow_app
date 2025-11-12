@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Add Quiz Question - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-question-circle text-primary"></i> Add Quiz Question</h2>
+            <p class="text-muted">Add a new question to <strong>{{ quiz.title }}</strong></p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Quiz Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-plus"></i> New Question</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        
+                        <!-- Question Text -->
+                        <div class="mb-4">
+                            <label for="question_text" class="form-label">Question Text *</label>
+                            {{ form.question_text(class="form-control", rows="3", placeholder="Enter your question here...") }}
+                            {% if form.question_text.errors %}
+                                <div class="text-danger small">
+                                    {% for error in form.question_text.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Options -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-list"></i> Answer Options</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="option_a" class="form-label">Option A *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-primary text-white">A</span>
+                                    {{ form.option_a(class="form-control", placeholder="First option") }}
+                                </div>
+                                {% if form.option_a.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.option_a.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="option_b" class="form-label">Option B *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-info text-white">B</span>
+                                    {{ form.option_b(class="form-control", placeholder="Second option") }}
+                                </div>
+                                {% if form.option_b.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.option_b.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="option_c" class="form-label">Option C *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-warning text-dark">C</span>
+                                    {{ form.option_c(class="form-control", placeholder="Third option") }}
+                                </div>
+                                {% if form.option_c.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.option_c.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="option_d" class="form-label">Option D *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-success text-white">D</span>
+                                    {{ form.option_d(class="form-control", placeholder="Fourth option") }}
+                                </div>
+                                {% if form.option_d.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.option_d.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Correct Answer & Settings -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <label for="correct_answer" class="form-label">Correct Answer *</label>
+                                {{ form.correct_answer(class="form-select") }}
+                                {% if form.correct_answer.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.correct_answer.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <label for="points" class="form-label">Points</label>
+                                {{ form.points(class="form-control", placeholder="Default: 1") }}
+                                <small class="text-muted">Points awarded for correct answer</small>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <label for="time_limit" class="form-label">Time Limit (seconds)</label>
+                                {{ form.time_limit(class="form-control", placeholder="Use quiz default") }}
+                                <small class="text-muted">Override quiz default ({{ quiz.time_per_question }}s)</small>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid gap-2">
+                            {{ form.submit(class="btn btn-primary btn-lg") }}
+                            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Preview Card -->
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fas fa-eye"></i> Question Preview</h6>
+                </div>
+                <div class="card-body">
+                    <div id="question-preview">
+                        <h6 id="preview-question">Enter your question to see preview...</h6>
+                        
+                        <div class="mt-3">
+                            <div class="form-check mb-2">
+                                <input type="radio" class="form-check-input" name="preview" id="preview-a" disabled>
+                                <label class="form-check-label" for="preview-a" id="preview-option-a">
+                                    Option A
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input type="radio" class="form-check-input" name="preview" id="preview-b" disabled>
+                                <label class="form-check-label" for="preview-b" id="preview-option-b">
+                                    Option B
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input type="radio" class="form-check-input" name="preview" id="preview-c" disabled>
+                                <label class="form-check-label" for="preview-c" id="preview-option-c">
+                                    Option C
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input type="radio" class="form-check-input" name="preview" id="preview-d" disabled>
+                                <label class="form-check-label" for="preview-d" id="preview-option-d">
+                                    Option D
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3 text-muted small">
+                            <p><strong>Correct Answer:</strong> <span id="preview-correct">None selected</span></p>
+                            <p><strong>Points:</strong> <span id="preview-points">1</span></p>
+                            <p><strong>Time Limit:</strong> <span id="preview-time">{{ quiz.time_per_question }}</span> seconds</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card mt-3">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Question Tips</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0">
+                        <li><strong>Clear & Concise:</strong> Keep questions under 100 words</li>
+                        <li><strong>One Correct Answer:</strong> Make sure only one option is clearly correct</li>
+                        <li><strong>Avoid Tricks:</strong> Focus on knowledge, not word games</li>
+                        <li><strong>Similar Length:</strong> Keep all options roughly the same length</li>
+                        <li><strong>Test First:</strong> Review your question in the preview panel</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Live preview updates
+document.addEventListener('DOMContentLoaded', function() {
+    const inputs = {
+        question: document.getElementById('question_text'),
+        optionA: document.getElementById('option_a'),
+        optionB: document.getElementById('option_b'),
+        optionC: document.getElementById('option_c'),
+        optionD: document.getElementById('option_d'),
+        correct: document.getElementById('correct_answer'),
+        points: document.getElementById('points'),
+        timeLimit: document.getElementById('time_limit')
+    };
+    
+    const previews = {
+        question: document.getElementById('preview-question'),
+        optionA: document.getElementById('preview-option-a'),
+        optionB: document.getElementById('preview-option-b'),
+        optionC: document.getElementById('preview-option-c'),
+        optionD: document.getElementById('preview-option-d'),
+        correct: document.getElementById('preview-correct'),
+        points: document.getElementById('preview-points'),
+        time: document.getElementById('preview-time')
+    };
+    
+    // Update preview on input
+    if (inputs.question) {
+        inputs.question.addEventListener('input', function() {
+            previews.question.textContent = this.value || 'Enter your question to see preview...';
+        });
+    }
+    
+    if (inputs.optionA) {
+        inputs.optionA.addEventListener('input', function() {
+            previews.optionA.textContent = this.value || 'Option A';
+        });
+    }
+    
+    if (inputs.optionB) {
+        inputs.optionB.addEventListener('input', function() {
+            previews.optionB.textContent = this.value || 'Option B';
+        });
+    }
+    
+    if (inputs.optionC) {
+        inputs.optionC.addEventListener('input', function() {
+            previews.optionC.textContent = this.value || 'Option C';
+        });
+    }
+    
+    if (inputs.optionD) {
+        inputs.optionD.addEventListener('input', function() {
+            previews.optionD.textContent = this.value || 'Option D';
+        });
+    }
+    
+    if (inputs.correct) {
+        inputs.correct.addEventListener('change', function() {
+            previews.correct.textContent = this.value ? 'Option ' + this.value : 'None selected';
+            
+            // Highlight correct option
+            document.querySelectorAll('[id^="preview-"]:not(#preview-question,#preview-correct,#preview-points,#preview-time)').forEach(el => {
+                el.style.fontWeight = 'normal';
+                el.style.color = '';
+            });
+            
+            if (this.value) {
+                const correctOption = document.getElementById('preview-option-' + this.value.toLowerCase());
+                if (correctOption) {
+                    correctOption.style.fontWeight = 'bold';
+                    correctOption.style.color = '#28a745';
+                }
+            }
+        });
+    }
+    
+    if (inputs.points) {
+        inputs.points.addEventListener('input', function() {
+            previews.points.textContent = this.value || '1';
+        });
+    }
+    
+    if (inputs.timeLimit) {
+        inputs.timeLimit.addEventListener('input', function() {
+            previews.time.textContent = this.value || '{{ quiz.time_per_question }}';
+        });
+    }
+});
+</script>
+{% endblock %}
