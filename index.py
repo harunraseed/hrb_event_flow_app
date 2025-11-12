@@ -2562,9 +2562,16 @@ def quiz_leaderboard(event_id):
         flash('Quiz not found.', 'error')
         return redirect(url_for('event_dashboard', event_id=event_id))
     
+    # Check if this is a participant view (from quiz completion) or admin view
+    is_participant = request.args.get('participant') == 'true'
+    
     leaderboard = quiz.leaderboard_data
     
-    return render_template('quiz_leaderboard.html', event=event, quiz=quiz, leaderboard=leaderboard)
+    return render_template('quiz_leaderboard.html', 
+                         event=event, 
+                         quiz=quiz, 
+                         leaderboard=leaderboard,
+                         is_participant=is_participant)
 
 @app.route('/event/<int:event_id>/quiz/gamemaster')
 def quiz_gamemaster(event_id):

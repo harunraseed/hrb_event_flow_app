@@ -410,12 +410,28 @@
         
         <!-- Action Buttons -->
         <div class="action-buttons">
-            <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary btn-lg me-3">
-                <i class="fas fa-chart-bar"></i> Quiz Dashboard
-            </a>
-            <a href="{{ url_for('event_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary btn-lg">
-                <i class="fas fa-arrow-left"></i> Back to Event
-            </a>
+            {% if not is_participant %}
+                <!-- Admin buttons - only show for non-participants -->
+                <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary btn-lg me-3">
+                    <i class="fas fa-chart-bar"></i> Quiz Dashboard
+                </a>
+                <a href="{{ url_for('event_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary btn-lg">
+                    <i class="fas fa-arrow-left"></i> Back to Event
+                </a>
+            {% else %}
+                <!-- Participant buttons - limited actions -->
+                <div class="text-center">
+                    <h5 class="mb-3 text-muted">
+                        <i class="fas fa-trophy text-warning"></i> Congratulations on completing the quiz!
+                    </h5>
+                    <button onclick="shareResults()" class="btn btn-success btn-lg me-3">
+                        <i class="fas fa-share-alt"></i> Share Results
+                    </button>
+                    <button onclick="window.print()" class="btn btn-outline-info btn-lg">
+                        <i class="fas fa-print"></i> Print Certificate
+                    </button>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -446,6 +462,31 @@
             }, 200);
         });
     });
+    
+    // Participant action functions
+    function shareResults() {
+        if (navigator.share) {
+            navigator.share({
+                title: '{{ quiz.title }} - Quiz Results',
+                text: 'Check out the leaderboard for {{ quiz.title }}!',
+                url: window.location.href
+            }).catch(console.error);
+        } else {
+            // Fallback: copy to clipboard
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                alert('🎉 Leaderboard link copied to clipboard!');
+            }).catch(() => {
+                // Ultimate fallback: select text
+                const textArea = document.createElement('textarea');
+                textArea.value = window.location.href;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('🎉 Leaderboard link copied to clipboard!');
+            });
+        }
+    }
 </script>
 
 {% endblock %}
