@@ -20,6 +20,8 @@ from utils.quiz_performance import (
 )
 import tempfile
 import pdfkit
+import qrcode
+from io import BytesIO
 
 load_dotenv()
 
@@ -2663,6 +2665,59 @@ def quiz_live_stats(quiz_id):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/qr')
+def generate_quiz_qr(event_id):
+    """Generate QR code for quiz joining"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            # Create a simple QR code that goes to quiz creation page
+            quiz_join_url = url_for('quiz_config', event_id=event_id, _external=True)
+        else:
+            # Create the quiz join URL (mobile-friendly) - use play route, not join
+            quiz_join_url = url_for('play_quiz', event_id=event_id, _external=True)
+        
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,  # controls the size of the QR Code
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(quiz_join_url)
+        qr.make(fit=True)
+        
+        # Create QR code image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to bytes
+        img_io = BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        
+        return Response(
+            img_io.getvalue(),
+            mimetype='image/png',
+            headers={'Content-Disposition': f'inline; filename=quiz_qr_{event.title.replace(" ", "_")}.png'}
+        )
+        
+    except Exception as e:
+        # Create a fallback QR with event dashboard URL
+        try:
+            fallback_url = url_for('event_dashboard', event_id=event_id, _external=True)
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+            qr.add_data(fallback_url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            img_io = BytesIO()
+            img.save(img_io, 'PNG')
+            img_io.seek(0)
+            return Response(img_io.getvalue(), mimetype='image/png')
+        except:
+            return redirect(url_for('event_dashboard', event_id=event_id))
 
 # Export for Vercel
 application = app

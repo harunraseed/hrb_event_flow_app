@@ -128,7 +128,7 @@
     <!-- Quiz Sharing -->
     {% if quiz.is_active %}
     <div class="row mb-4">
-        <div class="col-12">
+        <div class="col-md-6">
             <div class="alert alert-success">
                 <h5><i class="fas fa-share-alt"></i> Share Quiz Link</h5>
                 <p class="mb-2">Participants can join the quiz using this link:</p>
@@ -137,6 +137,28 @@
                            value="{{ request.url_root }}event/{{ event.id }}/quiz/play" readonly>
                     <button class="btn btn-outline-secondary" onclick="copyQuizLink()">
                         <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-qrcode"></i> Mobile QR Code</h5>
+                <p class="mb-2">Mobile users can scan this QR code to join:</p>
+                <div class="text-center mb-2">
+                    <img src="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
+                         alt="Quiz QR Code" 
+                         class="img-fluid" 
+                         style="max-width: 150px;">
+                </div>
+                <div class="btn-group w-100">
+                    <a href="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
+                       class="btn btn-outline-info btn-sm" 
+                       download="quiz_qr_{{ event.name|replace(' ', '_') }}.png">
+                        <i class="fas fa-download"></i> Download QR
+                    </a>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="printQR()">
+                        <i class="fas fa-print"></i> Print QR
                     </button>
                 </div>
             </div>
@@ -420,6 +442,33 @@ function resetQuiz() {
             alert('Network error occurred');
         });
     }
+}
+
+function printQR() {
+    const qrImg = document.querySelector('img[alt="Quiz QR Code"]');
+    const printWindow = window.open('', '', 'width=400,height=400');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Quiz QR Code</title>
+            <style>
+                body { text-align: center; padding: 20px; font-family: Arial, sans-serif; }
+                img { max-width: 300px; }
+                h3 { margin-bottom: 10px; }
+                p { font-size: 12px; color: #666; }
+            </style>
+        </head>
+        <body>
+            <h3>Join Quiz: {{ event.name }}</h3>
+            <img src="${qrImg.src}" alt="Quiz QR Code">
+            <p>Scan with your mobile device to join the quiz</p>
+            <p>${window.location.origin}/event/{{ event.id }}/quiz/play</p>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
 }
 </script>
 {% endblock %}
