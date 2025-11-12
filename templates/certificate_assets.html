@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}Certificate Assets - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-certificate text-primary"></i> Certificate Assets Manager</h2>
+            <p class="text-muted mb-0">Manage logos and signatures for <strong>{{ event.name }}</strong></p>
+        </div>
+        <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left"></i> Back to Certificates
+        </a>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="messageArea"></div>
+
+    <!-- Assets Grid -->
+    <div class="row">
+        <!-- Organizer Logo -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-building"></i> Organizer Logo</h5>
+                </div>
+                <div class="card-body">
+                    {% if assets.organizer_logo.url %}
+                        <div class="text-center mb-3">
+                            <img src="{{ assets.organizer_logo.url }}" alt="Organizer Logo" 
+                                 class="img-fluid rounded shadow" style="max-height: 200px;">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{{ assets.organizer_logo.url }}" target="_blank" class="btn btn-outline-info btn-sm flex-fill">
+                                <i class="fas fa-external-link-alt"></i> View Full Size
+                            </a>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteAsset('organizer_logo')">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-image fa-3x mb-3"></i>
+                            <p>No organizer logo uploaded</p>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Upload Form -->
+                    <hr>
+                    <form class="upload-form" data-asset-type="organizer_logo">
+                        <div class="mb-2">
+                            <label class="form-label"><strong>Upload New Logo</strong></label>
+                            <input type="file" class="form-control" name="file" accept="image/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-upload"></i> Upload Organizer Logo
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sponsor Logo -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-handshake"></i> Sponsor Logo</h5>
+                </div>
+                <div class="card-body">
+                    {% if assets.sponsor_logo.url %}
+                        <div class="text-center mb-3">
+                            <img src="{{ assets.sponsor_logo.url }}" alt="Sponsor Logo" 
+                                 class="img-fluid rounded shadow" style="max-height: 200px;">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{{ assets.sponsor_logo.url }}" target="_blank" class="btn btn-outline-info btn-sm flex-fill">
+                                <i class="fas fa-external-link-alt"></i> View Full Size
+                            </a>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteAsset('sponsor_logo')">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-5">
+                            <i class="fas fa-image fa-3x mb-3"></i>
+                            <p>No sponsor logo uploaded</p>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Upload Form -->
+                    <hr>
+                    <form class="upload-form" data-asset-type="sponsor_logo">
+                        <div class="mb-2">
+                            <label class="form-label"><strong>Upload New Logo</strong></label>
+                            <input type="file" class="form-control" name="file" accept="image/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-upload"></i> Upload Sponsor Logo
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signature 1 -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="fas fa-signature"></i> First Signature</h5>
+                    {% if assets.signature1.signatory_name %}
+                        <small>{{ assets.signature1.signatory_name }}{% if assets.signature1.signatory_title %} - {{ assets.signature1.signatory_title }}{% endif %}</small>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if assets.signature1.url %}
+                        <div class="text-center mb-3">
+                            <img src="{{ assets.signature1.url }}" alt="Signature 1" 
+                                 class="img-fluid rounded shadow" style="max-height: 150px; background: #f8f9fa; padding: 10px;">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{{ assets.signature1.url }}" target="_blank" class="btn btn-outline-info btn-sm flex-fill">
+                                <i class="fas fa-external-link-alt"></i> View Full Size
+                            </a>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteAsset('signature1')">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-pen-fancy fa-3x mb-3"></i>
+                            <p>No first signature uploaded</p>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Upload Form -->
+                    <hr>
+                    <form class="upload-form" data-asset-type="signature1">
+                        <div class="mb-2">
+                            <label class="form-label"><strong>Upload New Signature</strong></label>
+                            <input type="file" class="form-control" name="file" accept="image/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-upload"></i> Upload First Signature
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signature 2 -->
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-signature"></i> Second Signature</h5>
+                    {% if assets.signature2.signatory_name %}
+                        <small>{{ assets.signature2.signatory_name }}{% if assets.signature2.signatory_title %} - {{ assets.signature2.signatory_title }}{% endif %}</small>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if assets.signature2.url %}
+                        <div class="text-center mb-3">
+                            <img src="{{ assets.signature2.url }}" alt="Signature 2" 
+                                 class="img-fluid rounded shadow" style="max-height: 150px; background: #f8f9fa; padding: 10px;">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{{ assets.signature2.url }}" target="_blank" class="btn btn-outline-info btn-sm flex-fill">
+                                <i class="fas fa-external-link-alt"></i> View Full Size
+                            </a>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteAsset('signature2')">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-pen-fancy fa-3x mb-3"></i>
+                            <p>No second signature uploaded</p>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Upload Form -->
+                    <hr>
+                    <form class="upload-form" data-asset-type="signature2">
+                        <div class="mb-2">
+                            <label class="form-label"><strong>Upload New Signature</strong></label>
+                            <input type="file" class="form-control" name="file" accept="image/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-upload"></i> Upload Second Signature
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Storage Info -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="fab fa-github"></i> GitHub Storage Information</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Repository:</strong> harunraseed/hrb_event_flow_app</p>
+                            <p class="mb-1"><strong>Branch:</strong> main</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Logos Path:</strong> <code>static/uploads/certificates/logos/</code></p>
+                            <p class="mb-1"><strong>Signatures Path:</strong> <code>static/uploads/certificates/signatures/</code></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle upload forms
+    document.querySelectorAll('.upload-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const assetType = this.dataset.assetType;
+            const fileInput = this.querySelector('input[type="file"]');
+            const submitBtn = this.querySelector('button[type="submit"]');
+            
+            if (!fileInput.files[0]) {
+                showMessage('Please select a file to upload.', 'warning');
+                return;
+            }
+            
+            // Disable submit button
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+            
+            // Create FormData
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('asset_type', assetType);
+            
+            // Upload
+            fetch(`/event/{{ event.id }}/certificate_assets/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showMessage(data.error || 'Upload failed', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('Network error during upload', 'danger');
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            });
+        });
+    });
+});
+
+function deleteAsset(assetType) {
+    if (!confirm(`Are you sure you want to remove this ${assetType.replace('_', ' ')}?`)) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('asset_type', assetType);
+    
+    fetch(`/event/{{ event.id }}/certificate_assets/delete`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showMessage(data.error || 'Delete failed', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Network error during deletion', 'danger');
+    });
+}
+
+function showMessage(message, type) {
+    const messageArea = document.getElementById('messageArea');
+    messageArea.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        const alert = messageArea.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

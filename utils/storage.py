@@ -93,6 +93,12 @@ class StorageManager:
                 print(f"❌ GitHub API Error:")
                 print(f"   Status: {response.status_code}")
                 print(f"   Response: {response.text}")
+                if response.status_code == 403:
+                    print(f"   🔐 Permission Error: Your GitHub token needs 'repo' scope permissions")
+                    print(f"   📝 Go to GitHub → Settings → Developer settings → Personal access tokens")
+                    print(f"   ✅ Create new token with 'repo' scope (full repository access)")
+                elif response.status_code == 404:
+                    print(f"   📂 Repository not found: {self.github_repo}")
                 try:
                     error_data = response.json()
                     if 'message' in error_data:
@@ -145,6 +151,3 @@ class StorageManager:
         # For now, just return True since storage is cheap
         print("GitHub file deletion not implemented")
         return True
-
-# Initialize GitHub storage manager
-storage_manager = StorageManager()

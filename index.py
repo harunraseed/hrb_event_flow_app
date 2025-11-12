@@ -13,11 +13,14 @@ import csv
 import io
 import base64
 from uuid import uuid4
-from utils.storage import storage_manager
+from utils.storage import StorageManager
 import tempfile
 import pdfkit
 
 load_dotenv()
+
+# Initialize storage manager after loading environment
+storage_manager = StorageManager()
 
 # CRITICAL: Specify static and template folders
 app = Flask(__name__,
@@ -1045,6 +1048,155 @@ def save_certificate_config(event_id):
             db.session.rollback()
             print(f"Error saving certificate config: {str(e)}")
             return jsonify({'status': 'error', 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/event/<int:event_id>/certificate_assets')
+def certificate_assets_manager(event_id):
+    """Certificate Assets Management Page"""
+    event = Event.query.get_or_404(event_id)
+    cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+    
+    if not cert_config:
+        cert_config = CertificateConfig(event_id=event_id)
+        db.session.add(cert_config)
+        db.session.commit()
+    
+    # Get all uploaded assets for this event
+    assets = {
+        'organizer_logo': {
+            'url': cert_config.organizer_logo_url,
+            'name': 'Organizer Logo',
+            'type': 'logo'
+        },
+        'sponsor_logo': {
+            'url': cert_config.sponsor_logo_url,
+            'name': 'Sponsor Logo', 
+            'type': 'logo'
+        },
+        'signature1': {
+            'url': cert_config.signature1_image_url,
+            'name': f"Signature 1 - {cert_config.signature1_name or 'First Signatory'}",
+            'type': 'signature',
+            'signatory_name': cert_config.signature1_name,
+            'signatory_title': cert_config.signature1_title
+        },
+        'signature2': {
+            'url': cert_config.signature2_image_url,
+            'name': f"Signature 2 - {cert_config.signature2_name or 'Second Signatory'}",
+            'type': 'signature', 
+            'signatory_name': cert_config.signature2_name,
+            'signatory_title': cert_config.signature2_title
+        }
+    }
+    
+    return render_template('certificate_assets.html', 
+                         event=event, 
+                         cert_config=cert_config,
+                         assets=assets)
+
+@app.route('/event/<int:event_id>/certificate_assets/upload', methods=['POST'])
+def upload_certificate_asset(event_id):
+    """Upload new certificate asset"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+        
+        if not cert_config:
+            cert_config = CertificateConfig(event_id=event_id)
+            db.session.add(cert_config)
+            db.session.commit()
+        
+        asset_type = request.form.get('asset_type')  # organizer_logo, sponsor_logo, signature1, signature2
+        uploaded_file = request.files.get('file')
+        
+        if not uploaded_file or not uploaded_file.filename:
+            return jsonify({'success': False, 'error': 'No file selected'})
+        
+        # Determine folder based on asset type
+        if asset_type in ['organizer_logo', 'sponsor_logo']:
+            folder = 'certificates/logos'
+        elif asset_type in ['signature1', 'signature2']:
+            folder = 'certificates/signatures'
+        else:
+            return jsonify({'success': False, 'error': 'Invalid asset type'})
+        
+        # Upload to GitHub
+        print(f"🔄 Uploading {asset_type} for event {event.name}")
+        asset_url = storage_manager.save_image(uploaded_file, folder=folder)
+        
+        if asset_url:
+            # Update certificate config
+            if asset_type == 'organizer_logo':
+                cert_config.organizer_logo_url = asset_url
+            elif asset_type == 'sponsor_logo':
+                cert_config.sponsor_logo_url = asset_url
+            elif asset_type == 'signature1':
+                cert_config.signature1_image_url = asset_url
+            elif asset_type == 'signature2':
+                cert_config.signature2_image_url = asset_url
+            
+            cert_config.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            
+            print(f"✅ {asset_type} uploaded successfully: {asset_url}")
+            return jsonify({
+                'success': True, 
+                'url': asset_url,
+                'asset_type': asset_type,
+                'message': f'{asset_type.replace("_", " ").title()} uploaded successfully!'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to upload to GitHub'})
+            
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error uploading certificate asset: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/event/<int:event_id>/certificate_assets/delete', methods=['POST'])
+def delete_certificate_asset(event_id):
+    """Delete certificate asset"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        cert_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+        
+        if not cert_config:
+            return jsonify({'success': False, 'error': 'No certificate configuration found'})
+        
+        asset_type = request.form.get('asset_type')
+        
+        # Clear the asset URL from database
+        if asset_type == 'organizer_logo':
+            old_url = cert_config.organizer_logo_url
+            cert_config.organizer_logo_url = None
+        elif asset_type == 'sponsor_logo':
+            old_url = cert_config.sponsor_logo_url
+            cert_config.sponsor_logo_url = None
+        elif asset_type == 'signature1':
+            old_url = cert_config.signature1_image_url
+            cert_config.signature1_image_url = None
+        elif asset_type == 'signature2':
+            old_url = cert_config.signature2_image_url
+            cert_config.signature2_image_url = None
+        else:
+            return jsonify({'success': False, 'error': 'Invalid asset type'})
+        
+        cert_config.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+        
+        # Note: We could implement actual GitHub file deletion here if needed
+        # storage_manager.delete_image(old_url)
+        
+        print(f"🗑️ {asset_type} removed from event {event.name}")
+        return jsonify({
+            'success': True,
+            'asset_type': asset_type,
+            'message': f'{asset_type.replace("_", " ").title()} removed successfully!'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error deleting certificate asset: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
     else:
         errors = []
         for field, field_errors in form.errors.items():
