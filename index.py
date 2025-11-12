@@ -2677,6 +2677,9 @@ def generate_quiz_qr(event_id):
         # Even if quiz doesn't exist yet, participants should land on the quiz play page
         quiz_join_url = url_for('play_quiz', event_id=event_id, _external=True)
         
+        # Debug: Print the URL being used for QR generation
+        print(f"🔍 QR Code Debug: Generating QR for URL: {quiz_join_url}")
+        
         # Generate QR code
         qr = qrcode.QRCode(
             version=1,  # controls the size of the QR Code
@@ -2698,13 +2701,18 @@ def generate_quiz_qr(event_id):
         return Response(
             img_io.getvalue(),
             mimetype='image/png',
-            headers={'Content-Disposition': f'inline; filename=quiz_qr_{event.title.replace(" ", "_")}.png'}
+            headers={
+                'Content-Disposition': f'inline; filename=quiz_qr_{event.title.replace(" ", "_")}.png',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
         )
         
     except Exception as e:
-        # Create a fallback QR with event dashboard URL
+        # Create a fallback QR with quiz play URL (not dashboard)
         try:
-            fallback_url = url_for('event_dashboard', event_id=event_id, _external=True)
+            fallback_url = url_for('play_quiz', event_id=event_id, _external=True)
             qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
             qr.add_data(fallback_url)
             qr.make(fit=True)
@@ -2714,7 +2722,7 @@ def generate_quiz_qr(event_id):
             img_io.seek(0)
             return Response(img_io.getvalue(), mimetype='image/png')
         except:
-            return redirect(url_for('event_dashboard', event_id=event_id))
+            return redirect(url_for('play_quiz', event_id=event_id))
 
 # Export for Vercel
 application = app
