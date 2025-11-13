@@ -1562,11 +1562,16 @@ def delete_event(event_id):
         for participant in participants:
             Certificate.query.filter_by(participant_id=participant.id).delete()
         
-        # 4. Delete participants
+        # 4. Delete certificate config for this event
+        certificate_config = CertificateConfig.query.filter_by(event_id=event_id).first()
+        if certificate_config:
+            db.session.delete(certificate_config)
+        
+        # 5. Delete participants
         for participant in participants:
             db.session.delete(participant)
         
-        # 5. Finally delete the event
+        # 6. Finally delete the event
         db.session.delete(event)
         
         db.session.commit()
