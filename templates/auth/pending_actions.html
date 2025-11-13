@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Pending Actions{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2><i class="bi bi-clock"></i> Pending Actions</h2>
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+            <p class="text-muted">Review and approve actions submitted by admin users.</p>
+        </div>
+    </div>
+
+    <!-- Pending Actions List -->
+    <div class="row">
+        <div class="col-12">
+            {% if pending_actions %}
+            {% for action in pending_actions %}
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0">
+                            <span class="badge bg-warning me-2">{{ action.action_type.replace('_', ' ').title() }}</span>
+                            Requested by {{ action.admin_user.username }}
+                        </h6>
+                        <small class="text-muted">
+                            <i class="bi bi-clock"></i> {{ action.requested_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% if action.expires_at %}
+                            | Expires: {{ action.expires_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% endif %}
+                        </small>
+                    </div>
+                    <span class="badge bg-{{ 'danger' if action.is_expired else 'warning' }}">
+                        {{ 'Expired' if action.is_expired else 'Pending' }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    {% if action.reason %}
+                    <div class="mb-3">
+                        <strong>Reason:</strong>
+                        <p class="mb-0">{{ action.reason }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    {% if action.action_data %}
+                    <div class="mb-3">
+                        <strong>Action Details:</strong>
+                        <pre class="bg-light p-2 rounded"><code>{{ action.action_data }}</code></pre>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not action.is_expired %}
+                    <div class="row">
+                        <div class="col-md-6 mb-2">
+                            <form method="POST" action="{{ url_for('approve_action', action_id=action.id) }}" style="display: inline;">
+                                {{ action_form.hidden_tag() }}
+                                <div class="input-group mb-2">
+                                    <input type="text" name="approval_notes" class="form-control" 
+                                           placeholder="Approval notes (optional)">
+                                    <button type="submit" class="btn btn-success" 
+                                            onclick="return confirm('Are you sure you want to APPROVE this action? This cannot be undone.')">
+                                        <i class="bi bi-check-circle"></i> Approve
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <form method="POST" action="{{ url_for('reject_action', action_id=action.id) }}" style="display: inline;">
+                                {{ action_form.hidden_tag() }}
+                                <div class="input-group mb-2">
+                                    <input type="text" name="approval_notes" class="form-control" 
+                                           placeholder="Rejection reason (optional)">
+                                    <button type="submit" class="btn btn-danger" 
+                                            onclick="return confirm('Are you sure you want to REJECT this action?')">
+                                        <i class="bi bi-x-circle"></i> Reject
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> This action has expired and can no longer be processed.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+                    <h5 class="text-success mt-3">All Caught Up!</h5>
+                    <p class="text-muted">There are no pending actions to review at this time.</p>
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Action History (Last 10 processed actions) -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <h4><i class="bi bi-clock-history"></i> Recent Action History</h4>
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted mb-0">Action history feature will be implemented in future updates.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

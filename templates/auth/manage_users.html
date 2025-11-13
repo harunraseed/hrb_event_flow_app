@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Users{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2><i class="bi bi-people"></i> User Management</h2>
+                <div>
+                    <a href="{{ url_for('create_user') }}" class="btn btn-primary">
+                        <i class="bi bi-person-plus"></i> Add New User
+                    </a>
+                    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">All Users</h5>
+                </div>
+                <div class="card-body">
+                    {% if users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Created Date</th>
+                                    <th>Created By</th>
+                                    <th>Last Login</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr class="{{ 'table-warning' if not user.is_active else '' }}">
+                                    <td>{{ user.id }}</td>
+                                    <td>
+                                        <strong>{{ user.username }}</strong>
+                                        {% if user.id == current_user.id %}
+                                        <span class="badge bg-info ms-1">You</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ user.email }}</td>
+                                    <td>
+                                        {% if user.role == 'superadmin' %}
+                                        <span class="badge bg-danger">Super Admin</span>
+                                        {% elif user.role == 'admin' %}
+                                        <span class="badge bg-warning">Admin</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Member</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }}</small>
+                                    </td>
+                                    <td>
+                                        {% if user.created_by %}
+                                        <small>{{ user.created_by.username }}</small>
+                                        {% else %}
+                                        <small class="text-muted">System</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.last_login %}
+                                        <small>{{ user.last_login.strftime('%Y-%m-%d %H:%M') }}</small>
+                                        {% else %}
+                                        <small class="text-muted">Never</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if not user.is_superadmin() %}
+                                        <div class="btn-group" role="group">
+                                            <form method="POST" action="{{ url_for('toggle_user_status', user_id=user.id) }}" style="display: inline;">
+                                                {{ action_form.hidden_tag() }}
+                                                {% if user.is_active %}
+                                                <button type="submit" class="btn btn-outline-danger btn-sm" 
+                                                        onclick="return confirm('Are you sure you want to deactivate {{ user.username }}?')">
+                                                    <i class="bi bi-person-x"></i> Deactivate
+                                                </button>
+                                                {% else %}
+                                                <button type="submit" class="btn btn-outline-success btn-sm" 
+                                                        onclick="return confirm('Are you sure you want to activate {{ user.username }}?')">
+                                                    <i class="bi bi-person-check"></i> Activate
+                                                </button>
+                                                {% endif %}
+                                            </form>
+                                        </div>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Protected</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-people text-muted" style="font-size: 3rem;"></i>
+                        <h5 class="text-muted mt-2">No users found</h5>
+                        <p class="text-muted">Create the first user to get started.</p>
+                        <a href="{{ url_for('create_user') }}" class="btn btn-primary">
+                            <i class="bi bi-person-plus"></i> Add First User
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Statistics -->
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h5 class="card-title text-danger">{{ users|selectattr('role', 'equalto', 'superadmin')|list|length }}</h5>
+                    <p class="card-text">Super Admins</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h5 class="card-title text-warning">{{ users|selectattr('role', 'equalto', 'admin')|list|length }}</h5>
+                    <p class="card-text">Admins</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h5 class="card-title text-secondary">{{ users|selectattr('role', 'equalto', 'member')|list|length }}</h5>
+                    <p class="card-text">Members</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-light">
+                <div class="card-body">
+                    <h5 class="card-title text-success">{{ users|selectattr('is_active')|list|length }}</h5>
+                    <p class="card-text">Active Users</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

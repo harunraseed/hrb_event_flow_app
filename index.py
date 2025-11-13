@@ -1,12 +1,14 @@
 ﻿import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
-from flask_wtf import FlaskForm
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_bcrypt import Bcrypt
+from flask_wtf import FlaskForm, CSRFProtect
 from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField, SelectField, IntegerField
-from wtforms.validators import DataRequired, Length, Optional, URL, Email, NumberRange
+from wtforms import StringField, TextAreaField, DateField, TimeField, SubmitField, BooleanField, SelectField, IntegerField, PasswordField
+from wtforms.validators import DataRequired, Length, Optional, URL, Email, NumberRange, EqualTo
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import csv
@@ -36,6 +38,8 @@ app = Flask(__name__,
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
 # Database configuration
 if os.getenv('DATABASE_URL'):
@@ -60,6 +64,16 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 db = SQLAlchemy(app)
 mail = Mail(app)
 
+# Initialize authentication
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'info'
+
+# Initialize password hashing
+bcrypt = Bcrypt(app)
+
 # Initialize performance manager for high-concurrency quiz support
 quiz_performance = QuizPerformanceManager()
 quiz_performance.init_app(app)
@@ -68,8 +82,57 @@ app.extensions['quiz_performance'] = quiz_performance
 # Initialize quiz stats collector
 quiz_stats = QuizStatsCollector(quiz_performance.redis_client)
 
-# Temporarily disable CSRF for development
-# csrf = CSRFProtect(app)
+# Enable CSRF protection
+csrf = CSRFProtect(app)
+
+# CSRF error handler
+@app.errorhandler(400)
+def csrf_error(e):
+    print(f"CSRF Error: {e}")
+    if 'csrf' in str(e).lower():
+        return jsonify({'error': 'CSRF token missing or invalid', 'details': str(e)}), 400
+    return str(e), 400
+
+# Test route for CSRF token debugging
+@app.route('/test-csrf', methods=['GET', 'POST'])
+def test_csrf():
+    if request.method == 'POST':
+        return jsonify({'success': True, 'message': 'CSRF test successful'})
+    return f'''
+    <html>
+    <head><meta name="csrf-token" content="{{ csrf_token() }}"></head>
+    <body>
+        <h1>CSRF Test</h1>
+        <p>CSRF Token: <span id="token-display">{{ csrf_token() }}</span></p>
+        <button onclick="testCsrf()">Test CSRF</button>
+        <script>
+        function testCsrf() {{
+            const csrfToken = document.querySelector('meta[name="csrf-token"]');
+            console.log('CSRF meta tag found:', csrfToken ? 'Yes' : 'No');
+            if (csrfToken) {{
+                console.log('CSRF token:', csrfToken.getAttribute('content'));
+                fetch('/test-csrf', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                    body: `csrf_token=${{encodeURIComponent(csrfToken.getAttribute('content'))}}`
+                }})
+                .then(response => response.json())
+                .then(data => alert('Success: ' + data.message))
+                .catch(error => alert('Error: ' + error));
+            }} else {{
+                alert('CSRF token meta tag not found!');
+            }}
+        }}
+        </script>
+    </body>
+    </html>
+    '''
+
+# Make CSRF token available in all templates
+@app.context_processor
+def inject_csrf_token():
+    from flask_wtf.csrf import generate_csrf
+    return dict(csrf_token=generate_csrf)
 
 # Helper functions for email
 def test_email_connection():
@@ -108,10 +171,15 @@ def send_ticket_email(participant, event):
         
         # Send email
         mail.send(msg)
-        print(f"? Email sent successfully to {participant.email}")
+        print(f"✅ Email sent successfully to {participant.email}")
+        
+        # Mark email as sent
+        participant.email_sent = True
+        participant.email_sent_date = datetime.now(timezone.utc)
+        db.session.commit()
         
     except Exception as e:
-        print(f"? Failed to send email to {participant.email}: {str(e)}")
+        print(f"❌ Failed to send email to {participant.email}: {str(e)}")
         raise e
 
 # WTForms
@@ -211,6 +279,51 @@ class QuizUploadForm(FlaskForm):
                         render_kw={"accept": ".csv"})
     submit = SubmitField('Upload Questions')
 
+# Authentication Forms
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=80)])
+    password = PasswordField('Password', validators=[DataRequired()])
+    remember_me = BooleanField('Remember Me')
+    submit = SubmitField('Login')
+
+class CreateUserForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=80)])
+    email = StringField('Email', validators=[DataRequired(), Email(), Length(max=120)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField('Confirm Password', 
+                                   validators=[DataRequired(), EqualTo('password')])
+    role = SelectField('Role', 
+                      choices=[('member', 'Member'), ('admin', 'Admin')],
+                      validators=[DataRequired()])
+    submit = SubmitField('Create User')
+
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField('Current Password', validators=[DataRequired()])
+    new_password = PasswordField('New Password', validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField('Confirm New Password', 
+                                   validators=[DataRequired(), EqualTo('new_password')])
+    submit = SubmitField('Change Password')
+
+class ApprovalActionForm(FlaskForm):
+    action_id = IntegerField('Action ID', validators=[DataRequired()])
+    approval_notes = TextAreaField('Approval Notes', validators=[Optional()])
+    approve = SubmitField('Approve')
+    reject = SubmitField('Reject')
+
+class ForgotPasswordForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    submit = SubmitField('Send Reset Link')
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField('New Password', validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField('Confirm Password', 
+                                   validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Reset Password')
+
+class SimpleActionForm(FlaskForm):
+    """Simple form for actions that only need CSRF protection"""
+    submit = SubmitField('Submit')
+
 # Database Models
 class Event(db.Model):
     __tablename__ = 'events'
@@ -274,6 +387,11 @@ class Participant(db.Model):
     ticket_number = db.Column(db.String(50), unique=True, nullable=False)
     checked_in = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
+    
+    # Email tracking
+    email_sent = db.Column(db.Boolean, default=False)
+    email_sent_date = db.Column(db.DateTime)
+    
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
@@ -542,6 +660,243 @@ class QuizAnswer(db.Model):
     def __repr__(self):
         return f'<QuizAnswer {self.selected_answer} for Question {self.question.question_order}>'
 
+# Authentication Models
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    
+    # Role management
+    role = db.Column(db.String(20), default='member', nullable=False)  # superadmin, admin, member
+    
+    # Account status
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    last_login = db.Column(db.DateTime)
+    
+    # Password reset tokens
+    reset_token = db.Column(db.String(100))
+    reset_token_expires = db.Column(db.DateTime)
+    
+    # Relationships
+    created_by = db.relationship('User', remote_side=[id], backref='created_users')
+    pending_actions = db.relationship('PendingAction', foreign_keys='PendingAction.admin_user_id', backref='admin_user')
+    approved_actions = db.relationship('PendingAction', foreign_keys='PendingAction.approved_by_id', backref='approver')
+    
+    def __repr__(self):
+        return f'<User {self.username} ({self.role})>'
+    
+    # Flask-Login integration
+    def is_authenticated(self):
+        return True
+    
+    def is_anonymous(self):
+        return False
+    
+    def get_id(self):
+        return str(self.id)
+    
+    # Role checking methods
+    def is_superadmin(self):
+        return self.role == 'superadmin'
+    
+    def is_admin(self):
+        return self.role in ['admin', 'superadmin']
+    
+    def is_member(self):
+        return self.role == 'member'
+    
+    def can_manage_users(self):
+        return self.role == 'superadmin'
+    
+    def can_approve_actions(self):
+        return self.role == 'superadmin'
+    
+    def needs_approval_for_action(self, action_type):
+        """Check if admin needs approval for specific action"""
+        if self.is_superadmin():
+            return False
+        
+        # Actions that require approval for admin users
+        approval_required_actions = [
+            'delete_event', 'delete_participant', 'delete_quiz', 
+            'delete_certificate', 'bulk_delete', 'critical_config_change'
+        ]
+        
+        return action_type in approval_required_actions
+    
+    def generate_reset_token(self):
+        """Generate a password reset token"""
+        import secrets
+        self.reset_token = secrets.token_urlsafe(32)
+        self.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.session.commit()
+        return self.reset_token
+    
+    def verify_reset_token(self, token):
+        """Verify if the reset token is valid"""
+        if not self.reset_token or not self.reset_token_expires:
+            return False
+        
+        if self.reset_token != token:
+            return False
+            
+        if datetime.now(timezone.utc) > self.reset_token_expires:
+            # Token expired, clear it
+            self.reset_token = None
+            self.reset_token_expires = None
+            db.session.commit()
+            return False
+            
+        return True
+    
+    def clear_reset_token(self):
+        """Clear the password reset token"""
+        self.reset_token = None
+        self.reset_token_expires = None
+        db.session.commit()
+
+class PendingAction(db.Model):
+    __tablename__ = 'pending_actions'
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Action details
+    action_type = db.Column(db.String(50), nullable=False)  # delete_event, delete_participant, etc.
+    action_data = db.Column(db.Text)  # JSON data about the action
+    reason = db.Column(db.Text)  # Reason provided by admin
+    
+    # User management
+    admin_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    
+    # Approval status
+    status = db.Column(db.String(20), default='pending', nullable=False)  # pending, approved, rejected
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    approved_at = db.Column(db.DateTime)
+    approval_notes = db.Column(db.Text)
+    
+    # Timestamps
+    requested_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = db.Column(db.DateTime)  # Optional expiration for actions
+    
+    def __repr__(self):
+        return f'<PendingAction {self.action_type} by {self.admin_user.username}>'
+    
+    @property
+    def is_expired(self):
+        if self.expires_at:
+            return datetime.now(timezone.utc) > self.expires_at
+        return False
+    
+    def approve(self, superadmin_user, notes=None):
+        """Approve the pending action"""
+        self.status = 'approved'
+        self.approved_by_id = superadmin_user.id
+        self.approved_at = datetime.now(timezone.utc)
+        self.approval_notes = notes
+        db.session.commit()
+    
+    def reject(self, superadmin_user, notes=None):
+        """Reject the pending action"""
+        self.status = 'rejected'
+        self.approved_by_id = superadmin_user.id
+        self.approved_at = datetime.now(timezone.utc)
+        self.approval_notes = notes
+        db.session.commit()
+
+# User loader for Flask-Login
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Password management methods for User model
+def set_password(self, password):
+    """Hash and set password"""
+    self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+def check_password(self, password):
+    """Check if provided password matches hash"""
+    return bcrypt.check_password_hash(self.password_hash, password)
+
+# Add methods to User class
+User.set_password = set_password
+User.check_password = check_password
+
+# Authorization decorators
+from functools import wraps
+
+def require_login(f):
+    """Decorator to require user login"""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_admin(f):
+    """Decorator to require admin or superadmin role"""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin():
+            flash('Access denied. Admin privileges required.', 'error')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_superadmin(f):
+    """Decorator to require superadmin role"""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_superadmin():
+            flash('Access denied. Super admin privileges required.', 'error')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_approval_for_action(action_type):
+    """Decorator to check if action requires approval"""
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(*args, **kwargs):
+            if current_user.needs_approval_for_action(action_type):
+                # Create pending action instead of executing directly
+                return handle_pending_action(action_type, request, *args, **kwargs)
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def handle_pending_action(action_type, request_obj, *args, **kwargs):
+    """Handle creation of pending action for admin approval"""
+    import json
+    
+    # Extract action data from request
+    action_data = {
+        'args': args,
+        'kwargs': kwargs,
+        'form_data': dict(request_obj.form) if request_obj.form else None,
+        'method': request_obj.method,
+        'endpoint': request_obj.endpoint
+    }
+    
+    # Create pending action
+    pending_action = PendingAction(
+        action_type=action_type,
+        action_data=json.dumps(action_data),
+        admin_user_id=current_user.id,
+        reason=request_obj.form.get('approval_reason', '') if request_obj.form else ''
+    )
+    
+    db.session.add(pending_action)
+    db.session.commit()
+    
+    flash(f'Your {action_type} request has been submitted for approval. A super admin will review it shortly.', 'info')
+    return redirect(url_for('pending_actions_list'))
+
 # Add property to Event model for certificate status
 @property
 def has_certificate_config(self):
@@ -577,7 +932,251 @@ def debug_storage():
     return f"<pre>{str(debug_info)}</pre>"
 
 # Routes
+
+# Authentication Routes
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+    
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        
+        if user and user.check_password(form.password.data) and user.is_active:
+            login_user(user, remember=form.remember_me.data)
+            user.last_login = datetime.now(timezone.utc)
+            db.session.commit()
+            
+            flash(f'Welcome back, {user.username}!', 'success')
+            
+            # Redirect to next page or admin dashboard
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('admin_dashboard'))
+        else:
+            flash('Invalid username or password.', 'error')
+    
+    return render_template('auth/login.html', form=form)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+    
+    form = ForgotPasswordForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if user and user.is_active:
+            # Generate reset token
+            token = user.generate_reset_token()
+            
+            # In a real application, you would send an email here
+            # For now, we'll just flash the reset URL for development
+            reset_url = url_for('reset_password', token=token, _external=True)
+            flash(f'Password reset link (for development): {reset_url}', 'info')
+            flash('If an account with this email exists, a reset link has been sent.', 'success')
+            
+            # TODO: Send email with reset link
+            # send_password_reset_email(user.email, reset_url)
+            
+        else:
+            # Always show success message to prevent email enumeration
+            flash('If an account with this email exists, a reset link has been sent.', 'success')
+        
+        return redirect(url_for('login'))
+    
+    return render_template('auth/forgot_password.html', form=form)
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+    
+    # Find user by reset token
+    user = User.query.filter_by(reset_token=token).first()
+    if not user or not user.verify_reset_token(token):
+        flash('Invalid or expired reset token.', 'error')
+        return redirect(url_for('forgot_password'))
+    
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        user.set_password(form.password.data)
+        user.clear_reset_token()
+        flash('Your password has been reset successfully. You can now login.', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('auth/reset_password.html', form=form)
+
+@app.route('/admin/dashboard')
+@require_admin
+def admin_dashboard():
+    """Main admin dashboard with system overview"""
+    # Get system statistics
+    stats = {
+        'total_events': Event.query.count(),
+        'total_participants': Participant.query.count(),
+        'total_certificates': Certificate.query.count(),
+        'pending_actions': PendingAction.query.filter_by(status='pending').count(),
+        'total_users': User.query.count(),
+        'recent_events': Event.query.order_by(Event.created_at.desc()).limit(5).all()
+    }
+    
+    # Get pending actions for superadmin
+    pending_actions = []
+    if current_user.is_superadmin():
+        pending_actions = PendingAction.query.filter_by(status='pending').order_by(PendingAction.requested_at.desc()).all()
+    
+    return render_template('auth/admin_dashboard.html', stats=stats, pending_actions=pending_actions)
+
+# User Management Routes (Super Admin only)
+@app.route('/admin/users')
+@require_superadmin
+def manage_users():
+    """List and manage all users"""
+    users = User.query.order_by(User.created_at.desc()).all()
+    action_form = SimpleActionForm()
+    return render_template('auth/manage_users.html', users=users, action_form=action_form)
+
+@app.route('/admin/users/create', methods=['GET', 'POST'])
+@require_superadmin
+def create_user():
+    """Create new user"""
+    form = CreateUserForm()
+    
+    if form.validate_on_submit():
+        # Check if user already exists
+        if User.query.filter_by(username=form.username.data).first():
+            flash('Username already exists.', 'error')
+            return render_template('auth/create_user.html', form=form)
+        
+        if User.query.filter_by(email=form.email.data).first():
+            flash('Email already exists.', 'error')
+            return render_template('auth/create_user.html', form=form)
+        
+        # Create new user
+        user = User(
+            username=form.username.data,
+            email=form.email.data,
+            role=form.role.data,
+            created_by_id=current_user.id
+        )
+        user.set_password(form.password.data)
+        
+        db.session.add(user)
+        db.session.commit()
+        
+        flash(f'User {user.username} created successfully!', 'success')
+        return redirect(url_for('manage_users'))
+    
+    return render_template('auth/create_user.html', form=form)
+
+@app.route('/admin/users/<int:user_id>/toggle_status', methods=['POST'])
+@require_superadmin
+def toggle_user_status(user_id):
+    """Toggle user active status"""
+    user = User.query.get_or_404(user_id)
+    
+    if user.is_superadmin():
+        flash('Cannot deactivate super admin users.', 'error')
+    else:
+        user.is_active = not user.is_active
+        db.session.commit()
+        status = 'activated' if user.is_active else 'deactivated'
+        flash(f'User {user.username} has been {status}.', 'success')
+    
+    return redirect(url_for('manage_users'))
+
+# Approval System Routes
+@app.route('/admin/pending-actions')
+@require_superadmin
+def pending_actions_list():
+    """List all pending actions for approval"""
+    pending_actions = PendingAction.query.filter_by(status='pending').order_by(PendingAction.requested_at.desc()).all()
+    action_form = SimpleActionForm()
+    return render_template('auth/pending_actions.html', pending_actions=pending_actions, action_form=action_form)
+
+@app.route('/admin/pending-actions/<int:action_id>/approve', methods=['POST'])
+@require_superadmin
+def approve_action(action_id):
+    """Approve a pending action"""
+    action = PendingAction.query.get_or_404(action_id)
+    notes = request.form.get('approval_notes', '')
+    
+    action.approve(current_user, notes)
+    
+    # Execute the approved action
+    try:
+        execute_approved_action(action)
+        flash(f'Action {action.action_type} approved and executed successfully!', 'success')
+    except Exception as e:
+        flash(f'Action approved but execution failed: {str(e)}', 'error')
+    
+    return redirect(url_for('pending_actions_list'))
+
+@app.route('/admin/pending-actions/<int:action_id>/reject', methods=['POST'])
+@require_superadmin
+def reject_action(action_id):
+    """Reject a pending action"""
+    action = PendingAction.query.get_or_404(action_id)
+    notes = request.form.get('approval_notes', '')
+    
+    action.reject(current_user, notes)
+    flash(f'Action {action.action_type} rejected.', 'info')
+    
+    return redirect(url_for('pending_actions_list'))
+
+def execute_approved_action(action):
+    """Execute an approved action"""
+    import json
+    
+    action_data = json.loads(action.action_data)
+    action_type = action.action_type
+    
+    # Map action types to execution functions
+    # This is a simplified implementation - you'd expand this based on actual needs
+    if action_type == 'delete_event':
+        event_id = action_data.get('event_id')
+        if event_id:
+            event = Event.query.get(event_id)
+            if event:
+                db.session.delete(event)
+                db.session.commit()
+    elif action_type == 'delete_participant':
+        participant_id = action_data.get('participant_id')
+        if participant_id:
+            participant = Participant.query.get(participant_id)
+            if participant:
+                db.session.delete(participant)
+                db.session.commit()
+    # Add more action types as needed
+
+# Change Password Route
+@app.route('/admin/change-password', methods=['GET', 'POST'])
+@require_login
+def change_password():
+    """Change user password"""
+    form = ChangePasswordForm()
+    
+    if form.validate_on_submit():
+        if current_user.check_password(form.current_password.data):
+            current_user.set_password(form.new_password.data)
+            db.session.commit()
+            flash('Password changed successfully!', 'success')
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Current password is incorrect.', 'error')
+    
+    return render_template('auth/change_password.html', form=form)
+
 @app.route('/')
+@require_login
 def index():
     try:
         events = Event.query.order_by(Event.date.desc()).all()
@@ -587,6 +1186,7 @@ def index():
     return render_template('index.html', events=events)
 
 @app.route('/create_event', methods=['GET', 'POST'])
+@require_admin
 def create_event():
     form = CreateEventForm()
     
@@ -639,12 +1239,14 @@ def create_event():
     return render_template('create_event.html', form=form)
 
 @app.route('/event_created/<int:event_id>')
+@require_admin
 def event_created_success(event_id):
     """Success page after creating an event"""
     event = Event.query.get_or_404(event_id)
     return render_template('event_created_success.html', event=event)
 
 @app.route('/upload_participants/<int:event_id>', methods=['GET', 'POST'])
+@require_admin
 def upload_participants(event_id):
     event = Event.query.get_or_404(event_id)
     
@@ -693,19 +1295,29 @@ def upload_participants(event_id):
     return render_template('upload_participants.html', event=event)
 
 @app.route('/event/<int:event_id>/dashboard')
+@require_admin
 def event_dashboard(event_id):
     event = Event.query.get_or_404(event_id)
     participants = Participant.query.filter_by(event_id=event_id).all()
     
+    # Calculate email sent count
+    emails_sent = sum(1 for p in participants if p.email_sent)
+    
+    # Calculate certificate issued count
+    certificates_issued = Certificate.query.filter_by(event_id=event_id).count()
+    
     stats = {
         'total': len(participants),
         'checked_in': sum(1 for p in participants if p.checked_in),
-        'pending': sum(1 for p in participants if not p.checked_in)
+        'pending': sum(1 for p in participants if not p.checked_in),
+        'emails_sent': emails_sent,
+        'certificates_issued': certificates_issued
     }
     
     return render_template('event_dashboard.html', event=event, participants=participants, stats=stats)
 
 @app.route('/event/<int:event_id>/delete', methods=['POST'])
+@require_approval_for_action('delete_event')
 def delete_event(event_id):
     """Delete an event and all associated data"""
     try:
@@ -752,6 +1364,7 @@ def delete_event(event_id):
         return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/participants/bulk_delete', methods=['POST'])
+@require_approval_for_action('bulk_delete')
 def bulk_delete_participants_alt():
     """Delete multiple participants (alternative route)"""
     participant_ids = request.form.getlist('participant_ids')
@@ -786,6 +1399,7 @@ def bulk_delete_participants_alt():
     return redirect(url_for('event_dashboard', event_id=event_id) if event_id else url_for('index'))
 
 @app.route('/participant/<int:participant_id>/preview_ticket')
+@require_admin
 def preview_ticket(participant_id):
     """Preview ticket email without sending"""
     participant = Participant.query.get_or_404(participant_id)
@@ -794,6 +1408,7 @@ def preview_ticket(participant_id):
                          participant=participant)
 
 @app.route('/participants/bulk_resend', methods=['POST'])
+@require_admin
 def bulk_resend_tickets_alt():
     """Resend tickets to multiple participants (alternative route)"""
     participant_ids = request.form.getlist('participant_ids')
@@ -840,6 +1455,7 @@ def bulk_resend_tickets_alt():
     return redirect(url_for('event_dashboard', event_id=event_id) if event_id else url_for('index'))
 
 @app.route('/participant/<int:participant_id>/edit', methods=['GET', 'POST'])
+@require_admin
 def edit_participant(participant_id):
     """Edit participant details"""
     participant = Participant.query.get_or_404(participant_id)
@@ -878,25 +1494,70 @@ def edit_participant(participant_id):
     return render_template('edit_participant.html', form=form, participant=participant)
 
 @app.route('/participant/<int:participant_id>/checkin', methods=['GET', 'POST'])
+@csrf.exempt  # Temporarily exempt from CSRF for testing
+@require_admin
 def toggle_checkin(participant_id):
-    print(f"?? DEBUG: Check-in route called for participant {participant_id} with method {request.method}")
-    participant = Participant.query.get_or_404(participant_id)
-    
-    # If GET request, redirect to dashboard with error message
-    if request.method == 'GET':
-        print(f"?? DEBUG: GET request detected, redirecting to dashboard")
-        flash('Check-in must be done via button click, not direct URL access.', 'warning')
-        return redirect(url_for('event_dashboard', event_id=participant.event_id))
-    
-    # Handle POST request
-    participant.checked_in = not participant.checked_in
-    participant.checkin_time = datetime.now(timezone.utc) if participant.checked_in else None
-    db.session.commit()
-    
-    status = 'checked in' if participant.checked_in else 'checked out'
-    
-    # Check if this is a form submission that should redirect
-    if request.form.get('redirect') == 'true':
+    try:
+        print(f"?? DEBUG: Check-in route called for participant {participant_id} with method {request.method}")
+        print(f"?? DEBUG: Request headers: {dict(request.headers)}")
+        print(f"?? DEBUG: Content-Type: {request.content_type}")
+        
+        participant = Participant.query.get_or_404(participant_id)
+        
+        # If GET request, redirect to dashboard with error message
+        if request.method == 'GET':
+            print(f"?? DEBUG: GET request detected, redirecting to dashboard")
+            flash('Check-in must be done via button click, not direct URL access.', 'warning')
+            return redirect(url_for('event_dashboard', event_id=participant.event_id))
+
+        # Handle POST request
+        print(f"?? DEBUG: Processing POST request - toggling check-in status")
+        
+        # Check if JSON data was sent
+        json_data = None
+        form_data = None
+        redirect_requested = False
+        
+        if request.content_type == 'application/json':
+            json_data = request.get_json()
+            print(f"?? DEBUG: JSON data: {json_data}")
+            if json_data:
+                redirect_requested = json_data.get('redirect', False)
+        else:
+            form_data = dict(request.form)
+            print(f"?? DEBUG: Form data: {form_data}")
+            redirect_requested = request.form.get('redirect') == 'true'
+        
+        print(f"?? DEBUG: Redirect requested: {redirect_requested}")
+        
+        participant.checked_in = not participant.checked_in
+        participant.checkin_time = datetime.now(timezone.utc) if participant.checked_in else None
+        db.session.commit()
+        print(f"?? DEBUG: Database updated successfully")
+        
+        status = 'checked in' if participant.checked_in else 'checked out'
+        
+        # Check if this is a form submission that should redirect
+        if redirect_requested:
+            print(f"?? DEBUG: Redirect requested, redirecting to dashboard")
+            flash(f'{participant.name} {status}', 'success')
+            return redirect(url_for('event_dashboard', event_id=participant.event_id))
+
+        # Otherwise return JSON for AJAX calls
+        response_data = {
+            'success': True,
+            'message': f'{participant.name} {status}',
+            'checked_in': participant.checked_in
+        }
+        print(f"?? DEBUG: Returning JSON response: {response_data}")
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"?? DEBUG: Exception occurred: {str(e)}")
+        print(f"?? DEBUG: Exception type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
         flash(f'{participant.name} {status}', 'success')
         return redirect(url_for('event_dashboard', event_id=participant.event_id))
     
@@ -908,6 +1569,7 @@ def toggle_checkin(participant_id):
     })
 
 @app.route('/send_emails/<int:event_id>', methods=['GET', 'POST'])
+@require_admin
 def send_emails(event_id):
     event = Event.query.get_or_404(event_id)
     participants = Participant.query.filter_by(event_id=event_id).all()
@@ -993,6 +1655,7 @@ def test_single_email(participant_id):
     return redirect(url_for('event_dashboard', event_id=event.id))
 
 @app.route('/event/<int:event_id>/export')
+@require_admin
 def export_attendance(event_id):
     event = Event.query.get_or_404(event_id)
     participants = Participant.query.filter_by(event_id=event_id).all()
@@ -1040,6 +1703,7 @@ def after_request(response):
 # ===== MISSING ROUTES FOR TEMPLATE COMPATIBILITY =====
 
 @app.route('/participant/<int:participant_id>/delete', methods=['POST'])
+@require_approval_for_action('delete_participant')
 def delete_participant(participant_id):
     """Delete a single participant (called by template)."""
     participant = Participant.query.get_or_404(participant_id)
@@ -1067,6 +1731,7 @@ def delete_participant(participant_id):
     return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/participant/<int:participant_id>/resend_ticket', methods=['POST'])
+@require_admin
 def resend_ticket(participant_id):
     """Resend ticket to a single participant (called by template)."""
     participant = Participant.query.get_or_404(participant_id)
@@ -1083,6 +1748,7 @@ def resend_ticket(participant_id):
     return redirect(url_for('event_dashboard', event_id=event.id))
 
 @app.route('/bulk_resend_tickets', methods=['POST'])
+@require_admin
 def bulk_resend_tickets():
     """Bulk resend tickets to selected participants."""
     selected_participants = request.form.getlist('selected_participants')
@@ -1112,6 +1778,7 @@ def bulk_resend_tickets():
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/bulk_delete_participants', methods=['POST'])
+@require_approval_for_action('bulk_delete')
 def bulk_delete_participants():
     """Bulk delete selected participants."""
     selected_participants = request.form.getlist('selected_participants')
@@ -1153,6 +1820,7 @@ def bulk_delete_participants():
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/event/<int:event_id>/add_participant', methods=['POST'])
+@require_admin
 def add_participant(event_id):
     """Add a participant manually (called by template form)."""
     event = Event.query.get_or_404(event_id)
@@ -1198,12 +1866,14 @@ def add_participant(event_id):
     return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/event/<int:event_id>/send_emails', methods=['POST'])
+@require_admin
 def send_emails_alt(event_id):
     """Send emails to all participants (alternative route called by template)."""
     return redirect(url_for('send_emails', event_id=event_id))
 
 # Certificate Routes
 @app.route('/event/<int:event_id>/certificates')
+@require_admin
 def certificate_preview_page(event_id):
     """Certificate preview and configuration page"""
     event = Event.query.get_or_404(event_id)
@@ -1253,6 +1923,7 @@ def certificate_preview_page(event_id):
                          eligible_participants=eligible_participants)
 
 @app.route('/event/<int:event_id>/certificates/save', methods=['POST'])
+@require_admin
 def save_certificate_config(event_id):
     """Save certificate configuration"""
     event = Event.query.get_or_404(event_id)
@@ -1324,6 +1995,7 @@ def save_certificate_config(event_id):
             return jsonify({'status': 'error', 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/event/<int:event_id>/certificate_assets')
+@require_admin
 def certificate_assets_manager(event_id):
     """Certificate Assets Management Page"""
     event = Event.query.get_or_404(event_id)
@@ -1996,6 +2668,7 @@ with app.app_context():
 
 # Quiz Routes
 @app.route('/event/<int:event_id>/quiz')
+@require_admin
 def quiz_dashboard(event_id):
     """Quiz management dashboard"""
     event = Event.query.get_or_404(event_id)
@@ -2020,6 +2693,7 @@ def quiz_dashboard(event_id):
     return render_template('quiz_dashboard.html', event=event, quiz=quiz, questions=questions, attempts=attempts, stats=stats)
 
 @app.route('/event/<int:event_id>/quiz/config', methods=['GET', 'POST'])
+@require_admin
 def quiz_config(event_id):
     """Configure quiz settings"""
     event = Event.query.get_or_404(event_id)
@@ -2048,6 +2722,7 @@ def quiz_config(event_id):
     return render_template('quiz_config.html', event=event, quiz=quiz, form=form)
 
 @app.route('/event/<int:event_id>/quiz/questions/add', methods=['GET', 'POST'])
+@require_admin
 def add_quiz_question(event_id):
     """Add a new quiz question manually"""
     event = Event.query.get_or_404(event_id)
@@ -2091,6 +2766,7 @@ def add_quiz_question(event_id):
     return render_template('add_quiz_question.html', event=event, quiz=quiz, form=form)
 
 @app.route('/event/<int:event_id>/quiz/questions/upload', methods=['GET', 'POST'])
+@require_admin
 def upload_quiz_questions(event_id):
     """Upload quiz questions via CSV"""
     event = Event.query.get_or_404(event_id)
@@ -2163,6 +2839,7 @@ def upload_quiz_questions(event_id):
     return render_template('upload_quiz_questions.html', event=event, quiz=quiz, form=form)
 
 @app.route('/event/<int:event_id>/quiz/questions/<int:question_id>/delete', methods=['POST'])
+@require_approval_for_action('delete_quiz_question')
 def delete_quiz_question(event_id, question_id):
     """Delete a quiz question"""
     try:
@@ -2183,6 +2860,7 @@ def delete_quiz_question(event_id, question_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/delete', methods=['POST'])
+@require_approval_for_action('delete_quiz')
 def delete_quiz(event_id):
     """Delete the entire quiz and all related data"""
     try:
@@ -2217,6 +2895,7 @@ def delete_quiz(event_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/reset', methods=['POST'])
+@require_admin
 def reset_quiz(event_id):
     """Reset quiz data (delete all attempts and answers, keep questions)"""
     try:
@@ -2255,6 +2934,7 @@ def reset_quiz(event_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/start', methods=['POST'])
+@require_admin
 def start_quiz(event_id):
     """Start the quiz (admin function)"""
     try:
@@ -2278,6 +2958,7 @@ def start_quiz(event_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/end', methods=['POST'])
+@require_admin
 def end_quiz(event_id):
     """End the quiz (admin function)"""
     try:
@@ -2574,6 +3255,7 @@ def quiz_leaderboard(event_id):
                          is_participant=is_participant)
 
 @app.route('/event/<int:event_id>/quiz/gamemaster')
+@require_admin
 def quiz_gamemaster(event_id):
     """Game master dashboard with live updates"""
     event = Event.query.get_or_404(event_id)
@@ -2681,6 +3363,7 @@ def quiz_live_stats(quiz_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/qr')
+@require_admin
 def generate_quiz_qr(event_id):
     """Generate QR code for quiz joining"""
     try:

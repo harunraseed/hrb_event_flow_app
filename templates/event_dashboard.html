@@ -1,5 +1,10 @@
 ﻿{% extends "base.html" %}
 {% block title %}Dashboard - Event Ticketing{% endblock %}
+
+{% block head %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-8">
@@ -25,27 +30,48 @@
 </div>
 
 <div class="row mb-4 stats-row">
-    <div class="col-md-3">
-        <div class="card text-center bg-primary text-white">
+    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+        <div class="card text-center bg-primary text-white h-100">
             <div class="card-body">
+                <i class="fas fa-users fa-2x mb-2"></i>
                 <h5>Total</h5>
                 <h2>{{ stats.total }}</h2>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-center bg-success text-white">
+    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+        <div class="card text-center bg-success text-white h-100">
             <div class="card-body">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
                 <h5>Checked In</h5>
                 <h2>{{ stats.checked_in }}</h2>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-center bg-warning text-white">
+    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+        <div class="card text-center bg-warning text-white h-100">
             <div class="card-body">
+                <i class="fas fa-clock fa-2x mb-2"></i>
                 <h5>Pending</h5>
                 <h2>{{ stats.pending }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+        <div class="card text-center bg-info text-white h-100">
+            <div class="card-body">
+                <i class="fas fa-envelope fa-2x mb-2"></i>
+                <h5>Emails Sent</h5>
+                <h2>{{ stats.emails_sent }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+        <div class="card text-center bg-secondary text-white h-100">
+            <div class="card-body">
+                <i class="fas fa-certificate fa-2x mb-2"></i>
+                <h5>Certificates</h5>
+                <h2>{{ stats.certificates_issued }}</h2>
             </div>
         </div>
     </div>
@@ -58,6 +84,7 @@
     </div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('add_participant', event_id=event.id) }}" class="row g-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <div class="col-md-5">
                 <input type="text" class="form-control" name="name" placeholder="Participant Name" required>
             </div>
@@ -73,6 +100,7 @@
 
 <!-- Bulk Actions Form -->
 <form id="bulkActionsForm" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3>Participants ({{ participants|length }})</h3>
         <div class="btn-group" role="group">
@@ -84,8 +112,39 @@
         </div>
     </div>
 
+    <!-- Search Bar -->
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="text" class="form-control" id="searchInput" placeholder="Search by name, email, ticket number, status..." onkeyup="searchParticipants()">
+                <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Clear Search">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="row">
+                <div class="col-6">
+                    <select class="form-select" id="checkinFilter" onchange="searchParticipants()">
+                        <option value="">All Check-in Status</option>
+                        <option value="checked-in">Checked In</option>
+                        <option value="pending">Pending</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <select class="form-select" id="emailFilter" onchange="searchParticipants()">
+                        <option value="">All Email Status</option>
+                        <option value="sent">Email Sent</option>
+                        <option value="not-sent">Email Not Sent</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="table-responsive">
-        <table class="table table-striped table-hover">
+        <table class="table table-striped table-hover" id="participantsTable">
             <thead class="table-dark">
                 <tr>
                     <th width="30">
@@ -101,7 +160,11 @@
             </thead>
             <tbody>
                 {% for participant in participants %}
-                    <tr>
+                    <tr data-name="{{ participant.name|lower }}" 
+                        data-email="{{ participant.email|lower }}" 
+                        data-ticket="{{ participant.ticket_number|lower }}"
+                        data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
+                        data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
                         <td>
                             <input type="checkbox" name="participant_ids" value="{{ participant.id }}" class="form-check-input participant-checkbox">
                         </td>
@@ -119,6 +182,14 @@
                             {% endif %}
                             <div class="d-md-none">
                                 <small class="text-muted">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</small>
+                            </div>
+                            <!-- Email Status Badge -->
+                            <div class="mt-1">
+                                {% if participant.email_sent %}
+                                    <span class="badge bg-info text-white">📧 Email Sent</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">📧 Not Sent</span>
+                                {% endif %}
                             </div>
                         </td>
                         <td class="d-none d-md-table-cell">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</td>
@@ -169,16 +240,31 @@
 <script>
 // Toggle check-in/check-out via AJAX
 function toggleCheckin(participantId) {
+    console.log('⭐ toggleCheckin function called for participant:', participantId);
+    
+    // Send JSON data instead of form data
+    console.log('⭐ Making JSON request to:', `/participant/${participantId}/checkin`);
+    
     fetch(`/participant/${participantId}/checkin`, {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Type': 'application/json',
         },
-        body: 'redirect=false'
+        body: JSON.stringify({
+            redirect: false
+        })
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('⭐ Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
     .then(data => {
+        console.log('⭐ Response data:', data);
         if (data.success) {
+            console.log('⭐ Success! Reloading page...');
             // Reload the page to update the UI
             location.reload();
         } else {
@@ -186,17 +272,25 @@ function toggleCheckin(participantId) {
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Failed to update check-in status');
+        console.error('⭐ Error:', error);
+        alert('Failed to update check-in status: ' + error.message);
     });
 }
 
 // Resend ticket
 function resendTicket(participantId) {
     if (confirm('Resend ticket to this participant?')) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/participant/${participantId}/resend_ticket`;
+        
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
         document.body.appendChild(form);
         form.submit();
     }
@@ -205,9 +299,17 @@ function resendTicket(participantId) {
 // Delete participant
 function deleteParticipant(participantId, participantName) {
     if (confirm(`Delete ${participantName}? This action cannot be undone.`)) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/participant/${participantId}/delete`;
+        
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
         document.body.appendChild(form);
         form.submit();
     }
@@ -277,6 +379,65 @@ function confirmDeleteEvent() {
             alert('Event deletion cancelled - incorrect confirmation text.');
         }
     }
+}
+
+// Participant search functionality
+function searchParticipants() {
+    const searchInput = document.getElementById('searchInput').value.toLowerCase();
+    const checkinFilter = document.getElementById('checkinFilter').value;
+    const emailFilter = document.getElementById('emailFilter').value;
+    const table = document.getElementById('participantsTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    
+    let visibleCount = 0;
+    
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = row.getAttribute('data-name') || '';
+        const email = row.getAttribute('data-email') || '';
+        const ticket = row.getAttribute('data-ticket') || '';
+        const checkinStatus = row.getAttribute('data-checkin') || '';
+        const emailStatus = row.getAttribute('data-email-sent') || '';
+        
+        // Text search in name, email, and ticket number
+        const matchesText = searchInput === '' || 
+                           name.includes(searchInput) || 
+                           email.includes(searchInput) ||
+                           ticket.includes(searchInput);
+        
+        // Check-in status filter
+        const matchesCheckin = checkinFilter === '' || checkinStatus === checkinFilter;
+        
+        // Email status filter
+        const matchesEmail = emailFilter === '' || emailStatus === emailFilter;
+        
+        // Show row if all filters match
+        if (matchesText && matchesCheckin && matchesEmail) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    }
+    
+    // Update the participants count in the header
+    const header = document.querySelector('h3');
+    if (header) {
+        const totalCount = {{ participants|length }};
+        if (visibleCount !== totalCount) {
+            header.textContent = `Participants (${visibleCount} of ${totalCount})`;
+        } else {
+            header.textContent = `Participants (${totalCount})`;
+        }
+    }
+}
+
+// Clear search function
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('checkinFilter').value = '';
+    document.getElementById('emailFilter').value = '';
+    searchParticipants();
 }
 </script>
 

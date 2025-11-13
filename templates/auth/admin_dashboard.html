@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Welcome Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h2>
+                            <p class="mb-0">Welcome back, {{ current_user.username }}! ({{ current_user.role.title() }})</p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{{ url_for('change_password') }}" class="btn btn-light btn-sm">
+                                <i class="bi bi-key"></i> Change Password
+                            </a>
+                            <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- System Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-primary">
+                <div class="card-body">
+                    <i class="bi bi-calendar-event text-primary fs-1 mb-2"></i>
+                    <h3 class="text-primary">{{ stats.total_events }}</h3>
+                    <p class="card-text">Total Events</p>
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">View Events</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <i class="bi bi-people text-success fs-1 mb-2"></i>
+                    <h3 class="text-success">{{ stats.total_participants }}</h3>
+                    <p class="card-text">Total Participants</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-info">
+                <div class="card-body">
+                    <i class="bi bi-award text-info fs-1 mb-2"></i>
+                    <h3 class="text-info">{{ stats.total_certificates }}</h3>
+                    <p class="card-text">Certificates Issued</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-warning">
+                <div class="card-body">
+                    <i class="bi bi-clock text-warning fs-1 mb-2"></i>
+                    <h3 class="text-warning">{{ stats.pending_actions }}</h3>
+                    <p class="card-text">Pending Actions</p>
+                    {% if current_user.is_superadmin() %}
+                    <a href="{{ url_for('pending_actions_list') }}" class="btn btn-outline-warning btn-sm">Review Actions</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <h6>Event Management</h6>
+                            <div class="btn-group me-2 mb-2" role="group">
+                                <a href="{{ url_for('create_event') }}" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-plus-circle"></i> Create Event
+                                </a>
+                                <a href="{{ url_for('index') }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-list"></i> View All Events
+                                </a>
+                            </div>
+                        </div>
+                        
+                        {% if current_user.is_superadmin() %}
+                        <div class="col-md-6 mb-3">
+                            <h6>User Management</h6>
+                            <div class="btn-group me-2 mb-2" role="group">
+                                <a href="{{ url_for('create_user') }}" class="btn btn-success btn-sm">
+                                    <i class="bi bi-person-plus"></i> Add User
+                                </a>
+                                <a href="{{ url_for('manage_users') }}" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-people"></i> Manage Users ({{ stats.total_users }})
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Events and Pending Actions -->
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Events</h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.recent_events %}
+                    <div class="list-group list-group-flush">
+                        {% for event in stats.recent_events %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">{{ event.name }}</h6>
+                                <small class="text-muted">{{ event.date.strftime('%B %d, %Y') }}</small>
+                            </div>
+                            <div>
+                                <a href="{{ url_for('event_dashboard', event_id=event.id) }}" class="btn btn-outline-primary btn-sm">
+                                    View Dashboard
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center">No events created yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        {% if current_user.is_superadmin() and pending_actions %}
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Pending Approvals</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush">
+                        {% for action in pending_actions[:5] %}
+                        <div class="list-group-item">
+                            <h6 class="mb-1">{{ action.action_type.replace('_', ' ').title() }}</h6>
+                            <small class="text-muted">
+                                by {{ action.admin_user.username }} - 
+                                {{ action.requested_at.strftime('%m/%d %H:%M') }}
+                            </small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if pending_actions|length > 5 %}
+                    <div class="text-center mt-2">
+                        <small class="text-muted">+{{ pending_actions|length - 5 }} more</small>
+                    </div>
+                    {% endif %}
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('pending_actions_list') }}" class="btn btn-warning btn-sm">
+                            Review All Actions
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
