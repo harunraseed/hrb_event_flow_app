@@ -3,6 +3,395 @@
 
 {% block head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<style>
+/* Modern Participants Table Styles */
+.participants-container {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.participants-table {
+    margin: 0;
+}
+
+.participants-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.participants-table thead th {
+    border: none;
+    padding: 1rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: 0.5px;
+}
+
+.participant-row {
+    border-bottom: 1px solid #e9ecef;
+    transition: all 0.2s ease;
+    height: 65px; /* Fixed height for consistent layout */
+}
+
+.participant-row:hover {
+    background-color: #f8f9ff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.participants-table td {
+    vertical-align: middle;
+    padding: 0.5rem 0.75rem;
+}
+
+/* Compact participant layout */
+.participant-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.participant-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.avatar-text {
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+}
+
+.participant-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0; /* Allow text truncation */
+    flex: 1;
+}
+
+.participant-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #2d3748;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.participant-email {
+    font-size: 0.8rem;
+    color: #718096;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.participant-info {
+    padding: 0.75rem;
+}
+
+.ticket-badge, .time-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.ticket-badge {
+    background-color: #e6fffa;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.time-badge {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fbbf24;
+}
+
+.ticket-cell {
+    padding: 1rem 0.75rem;
+}
+
+.ticket-number {
+    background-color: #f7fafc;
+    color: #2d3748;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid #e2e8f0;
+}
+
+.status-cell {
+    padding: 1rem 0.75rem;
+}
+
+/* Compact status badges */
+.status-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.status-badge-inline {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    min-width: 80px;
+    justify-content: center;
+}
+
+.status-badge-inline.checked-in {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+}
+
+.status-badge-inline.pending {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fbbf24;
+}
+
+.email-badge-inline {
+    padding: 0.2rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    white-space: nowrap;
+}
+
+.email-badge-inline.sent {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.email-badge-inline.not-sent {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
+.time-cell {
+    padding: 1rem 0.75rem;
+}
+
+.check-time {
+    font-size: 0.875rem;
+    color: #4b5563;
+    font-weight: 500;
+}
+
+.actions-cell {
+    padding: 1rem 0.75rem;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.375rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-action {
+    padding: 0.375rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    border-width: 1.5px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    font-weight: 500;
+    margin: 0 1px;
+}
+
+.btn-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.btn-action i {
+    font-size: 0.8rem;
+}
+
+/* Specific action button colors */
+.btn-action.btn-success {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+.btn-action.btn-outline-success {
+    border-color: #28a745;
+    color: #28a745;
+}
+
+.btn-action.btn-outline-success:hover {
+    background-color: #28a745;
+    color: white;
+}
+
+.btn-action.btn-warning {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: #212529;
+}
+
+.btn-action.btn-info {
+    background-color: #17a2b8;
+    border-color: #17a2b8;
+    color: white;
+}
+
+.btn-action.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+    color: white;
+}
+
+.btn-action.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+.search-filter-container {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.bulk-actions .btn {
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.bulk-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Certificate dropdown styles */
+.dropdown-menu {
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: none;
+    padding: 0.5rem 0;
+}
+
+.dropdown-item {
+    padding: 0.5rem 1rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+}
+
+.dropdown-item:hover {
+    background-color: #f8f9ff;
+    color: #667eea;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .bulk-actions {
+        justify-content: center;
+    }
+    
+    .action-buttons {
+        gap: 0.25rem;
+    }
+    
+    .btn-action {
+        min-width: 28px;
+        height: 28px;
+        padding: 0.25rem 0.375rem;
+        font-size: 0.75rem;
+        margin: 0 1px;
+    }
+    
+    .btn-action i {
+        font-size: 0.75rem;
+    }
+    
+    .participants-table thead th {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    .participant-info, .status-cell, .actions-cell, .ticket-cell, .time-cell {
+        padding: 0.5rem 0.375rem;
+    }
+    
+    .participant-row {
+        height: 60px;
+    }
+    
+    .participant-avatar {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .avatar-text {
+        font-size: 0.75rem;
+    }
+    
+    .participant-name {
+        font-size: 0.875rem;
+    }
+    
+    .participant-email {
+        font-size: 0.75rem;
+    }
+    
+    .status-badge-inline {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.4rem;
+        min-width: 70px;
+    }
+    
+    .email-badge-inline {
+        font-size: 0.6rem;
+        padding: 0.15rem 0.3rem;
+    }
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -143,87 +532,137 @@
         </div>
     </div>
 
-    <div class="table-responsive">
-        <table class="table table-striped table-hover" id="participantsTable">
-            <thead class="table-dark">
-                <tr>
-                    <th width="30">
-                        <input type="checkbox" id="selectAll" class="form-check-input">
-                    </th>
-                    <th>Name</th>
-                    <th class="d-none d-md-table-cell">Email</th>
-                    <th class="d-none d-lg-table-cell">Ticket #</th>
-                    <th>Status</th>
-                    <th class="d-none d-md-table-cell">Check-in Time</th>
-                    <th width="200">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for participant in participants %}
-                    <tr data-name="{{ participant.name|lower }}" 
-                        data-email="{{ participant.email|lower }}" 
-                        data-ticket="{{ participant.ticket_number|lower }}"
-                        data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
-                        data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
-                        <td>
-                            <input type="checkbox" name="participant_ids" value="{{ participant.id }}" class="form-check-input participant-checkbox">
-                        </td>
-                        <td>
-                            <div>{{ participant.name }}</div>
-                            <small class="d-md-none text-muted">{{ participant.email }}</small>
-                        </td>
-                        <td class="d-none d-md-table-cell">{{ participant.email }}</td>
-                        <td class="d-none d-lg-table-cell"><code>{{ participant.ticket_number }}</code></td>
-                        <td>
-                            {% if participant.checked_in %}
-                                <span class="badge bg-success">✓ Checked In</span>
-                            {% else %}
-                                <span class="badge bg-warning">⏳ Pending</span>
-                            {% endif %}
-                            <div class="d-md-none">
-                                <small class="text-muted">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</small>
-                            </div>
-                            <!-- Email Status Badge -->
-                            <div class="mt-1">
-                                {% if participant.email_sent %}
-                                    <span class="badge bg-info text-white">📧 Email Sent</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">📧 Not Sent</span>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td class="d-none d-md-table-cell">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</td>
-                        <td>
-                            <div class="participant-actions d-flex flex-wrap gap-1">
-                                <!-- Toggle Check-in/Check-out Button -->
-                                {% if participant.checked_in %}
-                                    <button type="button" class="btn btn-success btn-sm" 
-                                            onclick="toggleCheckin({{ participant.id }})"
-                                            title="Check Out {{ participant.name }}">
-                                        ✓ Check Out
-                                    </button>
-                                {% else %}
-                                    <button type="button" class="btn btn-outline-success btn-sm" 
-                                            onclick="toggleCheckin({{ participant.id }})"
-                                            title="Check In {{ participant.name }}">
-                                        ○ Check In
-                                    </button>
-                                {% endif %}
-                                
-                                <a href="{{ url_for('edit_participant', participant_id=participant.id) }}" class="btn btn-outline-info btn-sm" title="Edit {{ participant.name }}">✏️</a>
-                                <button type="button" class="btn btn-outline-warning btn-sm" 
-                                        onclick="resendTicket({{ participant.id }})"
-                                        title="Resend Ticket to {{ participant.name }}">📧</button>
-                                <a href="{{ url_for('test_single_email', participant_id=participant.id) }}" class="btn btn-outline-info" title="Test Email">🧪</a>
-                                <button type="button" class="btn btn-outline-danger btn-sm"
-                                        onclick="deleteParticipant({{ participant.id }}, '{{ participant.name }}')"
-                                        title="Delete {{ participant.name }}">🗑️</button>
-                            </div>
-                        </td>
+    <div class="participants-container">
+        <div class="table-responsive">
+            <table class="table participants-table" id="participantsTable">
+                <thead>
+                    <tr>
+                        <th width="30">
+                            <input type="checkbox" id="selectAll" class="form-check-input">
+                        </th>
+                        <th>Participant</th>
+                        <th class="text-center">Ticket #</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-center d-none d-md-table-cell">Check-in Time</th>
+                        <th class="text-center">Actions</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% for participant in participants %}
+                        <tr class="participant-row" data-name="{{ participant.name|lower }}" 
+                            data-email="{{ participant.email|lower }}" 
+                            data-ticket="{{ participant.ticket_number|lower }}"
+                            data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
+                            data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
+                            <td>
+                                <input type="checkbox" name="participant_ids" value="{{ participant.id }}" class="form-check-input participant-checkbox">
+                            </td>
+                            <td class="participant-info">
+                                <div class="participant-compact">
+                                    <div class="participant-avatar">
+                                        <span class="avatar-text">{{ participant.name[:2].upper() }}</span>
+                                    </div>
+                                    <div class="participant-details">
+                                        <span class="participant-name">{{ participant.name }}</span>
+                                        <span class="participant-email">{{ participant.email }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-center ticket-cell">
+                                <code class="ticket-number">{{ participant.ticket_number }}</code>
+                            </td>
+                            <td class="text-center status-cell">
+                                <div class="status-compact">
+                                    {% if participant.checked_in %}
+                                        <span class="status-badge-inline checked-in">
+                                            <i class="fas fa-check-circle"></i> Checked In
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge-inline pending">
+                                            <i class="fas fa-clock"></i> Pending
+                                        </span>
+                                    {% endif %}
+                                    {% if participant.email_sent %}
+                                        <span class="email-badge-inline sent">
+                                            <i class="fas fa-check"></i> Sent
+                                        </span>
+                                    {% else %}
+                                        <span class="email-badge-inline not-sent">
+                                            <i class="fas fa-times"></i> Not Sent
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="text-center d-none d-md-table-cell time-cell">
+                                <span class="check-time">{{ participant.checkin_time.strftime('%m/%d %H:%M') if participant.checkin_time else '—' }}</span>
+                            </td>
+                            <td class="text-center actions-cell">
+                                <div class="action-buttons">
+                                    <!-- Toggle Check-in/Check-out Button -->
+                                    {% if participant.checked_in %}
+                                        <button type="button" class="btn btn-success btn-action" 
+                                                onclick="toggleCheckin({{ participant.id }})"
+                                                title="Check Out {{ participant.name }}"
+                                                data-bs-toggle="tooltip" data-bs-placement="top">
+                                            <i class="fas fa-user-check"></i>
+                                        </button>
+                                    {% else %}
+                                        <button type="button" class="btn btn-outline-success btn-action" 
+                                                onclick="toggleCheckin({{ participant.id }})"
+                                                title="Check In {{ participant.name }}"
+                                                data-bs-toggle="tooltip" data-bs-placement="top">
+                                            <i class="fas fa-user-plus"></i>
+                                        </button>
+                                    {% endif %}
+                                    
+                                    <!-- Certificate Actions -->
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-warning btn-action dropdown-toggle" 
+                                                data-bs-toggle="dropdown" 
+                                                title="Certificate Options">
+                                            <i class="fas fa-certificate"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            <li><a class="dropdown-item" href="{{ url_for('preview_single_certificate', participant_id=participant.id) }}" target="_blank">
+                                                <i class="fas fa-eye me-2"></i>Preview Certificate
+                                            </a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="resendCertificate({{ participant.id }}, '{{ participant.name }}')">
+                                                <i class="fas fa-paper-plane me-2"></i>Resend Certificate
+                                            </a></li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <!-- Edit Button -->
+                                    <a href="{{ url_for('edit_participant', participant_id=participant.id) }}" 
+                                       class="btn btn-info btn-action" 
+                                       title="Edit {{ participant.name }}"
+                                       data-bs-toggle="tooltip" data-bs-placement="top">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    
+                                    <!-- Resend Ticket Button -->
+                                    <button type="button" class="btn btn-primary btn-action" 
+                                            onclick="resendTicket({{ participant.id }})"
+                                            title="Resend Ticket to {{ participant.name }}"
+                                            data-bs-toggle="tooltip" data-bs-placement="top">
+                                        <i class="fas fa-envelope"></i>
+                                    </button>
+                                    
+                                    <!-- Delete Button -->
+                                    <button type="button" class="btn btn-danger btn-action"
+                                            onclick="deleteParticipant({{ participant.id }}, '{{ participant.name }}')"
+                                            title="Delete {{ participant.name }}"
+                                            data-bs-toggle="tooltip" data-bs-placement="top">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </form>
 
@@ -293,6 +732,64 @@ function resendTicket(participantId) {
         
         document.body.appendChild(form);
         form.submit();
+    }
+}
+
+// Resend certificate
+function resendCertificate(participantId, participantName) {
+    if (confirm(`Resend certificate to ${participantName}?`)) {
+        // Show loading state
+        const button = event.target.closest('.dropdown');
+        const originalText = button.querySelector('button').innerHTML;
+        button.querySelector('button').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        button.querySelector('button').disabled = true;
+        
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        
+        fetch(`/participant/${participantId}/resend_certificate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Restore button state
+            button.querySelector('button').innerHTML = originalText;
+            button.querySelector('button').disabled = false;
+            
+            if (data.success) {
+                // Show success message
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-success alert-dismissible fade show position-fixed';
+                alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+                alertDiv.innerHTML = `
+                    <i class="fas fa-check-circle me-2"></i>
+                    Certificate resent to ${participantName} successfully!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.body.appendChild(alertDiv);
+                
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 5000);
+            } else {
+                alert('Failed to resend certificate: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            // Restore button state
+            button.querySelector('button').innerHTML = originalText;
+            button.querySelector('button').disabled = false;
+            
+            console.error('Error:', error);
+            alert('Failed to resend certificate: ' + error.message);
+        });
     }
 }
 
@@ -439,6 +936,15 @@ function clearSearch() {
     document.getElementById('emailFilter').value = '';
     searchParticipants();
 }
+
+// Initialize Bootstrap tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
 </script>
 
 <!-- Hidden form for event deletion -->

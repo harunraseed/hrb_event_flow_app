@@ -1992,6 +1992,87 @@ def bulk_resend_tickets():
     
     return redirect(request.referrer or url_for('index'))
 
+@app.route('/participant/<int:participant_id>/resend_certificate', methods=['POST'])
+@require_admin
+def resend_certificate(participant_id):
+    """Resend certificate to a single participant via AJAX."""
+    try:
+        participant = Participant.query.get_or_404(participant_id)
+        event = participant.event
+        
+        # Check if participant is checked in
+        if not participant.checked_in:
+            return jsonify({
+                'success': False,
+                'message': 'Participant must be checked in to receive a certificate'
+            }), 400
+        
+        # Check if certificate configuration exists
+        cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+        if not cert_config:
+            return jsonify({
+                'success': False,
+                'message': 'Certificate configuration not found for this event'
+            }), 400
+        
+        # Check if participant already has a certificate
+        existing_cert = Certificate.query.filter_by(
+            event_id=event.id, 
+            participant_id=participant.id
+        ).first()
+        
+        if existing_cert:
+            # Resend existing certificate
+            certificate = existing_cert
+        else:
+            # Generate new certificate
+            certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+            
+            certificate = Certificate(
+                event_id=event.id,
+                participant_id=participant.id,
+                certificate_number=certificate_number,
+                certificate_type=cert_config.certificate_type,
+                organizer_name=cert_config.organizer_name,
+                sponsor_name=cert_config.sponsor_name,
+                event_location=cert_config.event_location,
+                event_theme=cert_config.event_theme,
+                organizer_logo_url=cert_config.organizer_logo_url,
+                sponsor_logo_url=cert_config.sponsor_logo_url,
+                signature1_name=cert_config.signature1_name,
+                signature1_title=cert_config.signature1_title,
+                signature1_image_url=cert_config.signature1_image_url,
+                signature2_name=cert_config.signature2_name,
+                signature2_title=cert_config.signature2_title,
+                signature2_image_url=cert_config.signature2_image_url,
+                issued_date=datetime.now(timezone.utc)
+            )
+            
+            db.session.add(certificate)
+            db.session.commit()
+        
+        # Send certificate email
+        success = send_certificate_email(participant, event, certificate)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Certificate sent successfully to {participant.email}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to send certificate email'
+            }), 500
+            
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error resending certificate: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error resending certificate: {str(e)}'
+        }), 500
+
 @app.route('/bulk_delete_participants', methods=['POST'])
 @require_approval_for_action('bulk_delete')
 def bulk_delete_participants():
@@ -2498,10 +2579,12 @@ def generate_certificates(event_id):
                 db.session.commit()
                 
                 # Send certificate email (with PDF attachment - to be implemented)
-                send_certificate_email(participant, event, certificate)
-                
-                success_count += 1
-                print(f"? Certificate generated and sent to {participant.name}")
+                if send_certificate_email(participant, event, certificate):
+                    success_count += 1
+                    print(f"? Certificate generated and sent to {participant.name}")
+                else:
+                    error_count += 1
+                    print(f"? Certificate generated but email failed for {participant.name}")
                 
             except Exception as e:
                 print(f"? Error generating certificate for {participant.name}: {str(e)}")
@@ -2561,10 +2644,11 @@ def send_certificate_email(participant, event, certificate):
         db.session.commit()
         
         print(f"? Certificate email sent successfully to {participant.email}")
+        return True
         
     except Exception as e:
         print(f"? Error sending certificate email to {participant.email}: {str(e)}")
-        raise e
+        return False
 
 def generate_certificate_pdf(participant, event, certificate):
     """Generate PDF certificate using multiple fallback methods"""
