@@ -2,6 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import joinedload
 from flask_mail import Mail, Message
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
@@ -1513,7 +1514,7 @@ def upload_participants(event_id):
 @require_admin
 def event_dashboard(event_id):
     event = Event.query.get_or_404(event_id)
-    participants = Participant.query.filter_by(event_id=event_id).all()
+    participants = Participant.query.options(db.joinedload(Participant.certificates)).filter_by(event_id=event_id).all()
     
     # Calculate email sent count
     emails_sent = sum(1 for p in participants if p.email_sent)
