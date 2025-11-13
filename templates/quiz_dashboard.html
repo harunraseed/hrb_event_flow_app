@@ -3,6 +3,7 @@
 {% block title %}Quiz Dashboard - {{ event.name }}{% endblock %}
 
 {% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <div class="container-fluid">
     <!-- Header -->
     <div class="row mb-4">
@@ -300,10 +301,12 @@
 <script>
 function startQuiz() {
     if (confirm('Are you sure you want to start the quiz? This will allow participants to join.')) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         fetch(`/event/{{ event.id }}/quiz/start`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             }
         })
         .then(response => response.json())
@@ -323,10 +326,12 @@ function startQuiz() {
 
 function endQuiz() {
     if (confirm('Are you sure you want to end the quiz? This will stop all participation.')) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         fetch(`/event/{{ event.id }}/quiz/end`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             }
         })
         .then(response => response.json())
@@ -365,10 +370,12 @@ function copyQuizLink() {
 
 function deleteQuestion(questionId) {
     if (confirm('Are you sure you want to delete this question?')) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         fetch(`/event/{{ event.id }}/quiz/questions/${questionId}/delete`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             }
         })
         .then(response => response.json())
@@ -393,10 +400,12 @@ function deleteQuiz() {
     if (confirm(`⚠️ WARNING: This will permanently delete the entire quiz "${quizTitle}" and ALL related data including:\n\n• ${participantCount} participant attempts\n• All quiz questions\n• All quiz answers\n• Quiz configuration\n\nThis action CANNOT be undone!\n\nAre you sure you want to delete this quiz?`)) {
         const userConfirmation = prompt('Type "DELETE QUIZ" to confirm:');
         if (userConfirmation === 'DELETE QUIZ') {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
             fetch(`/event/{{ event.id }}/quiz/delete`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
                 }
             })
             .then(response => response.json())
@@ -422,10 +431,12 @@ function resetQuiz() {
     const participantCount = {{ stats.total_attempts }};
     
     if (confirm(`⚠️ This will reset the quiz and remove all participant data:\n\n• ${participantCount} participant attempts will be deleted\n• All quiz answers will be removed\n• Quiz will be stopped and reset to inactive\n• Questions and configuration will be kept\n\nParticipants will need to rejoin the quiz.\n\nAre you sure you want to reset this quiz?`)) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         fetch(`/event/{{ event.id }}/quiz/reset`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             }
         })
         .then(response => response.json())

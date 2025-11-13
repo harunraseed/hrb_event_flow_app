@@ -1,6 +1,7 @@
 ﻿{% extends "base.html" %}
 {% block title %}Home - Event Ticketing{% endblock %}
 {% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <div class="row mb-4">
     <div class="col-md-8">
         <h1>📅 Upcoming Events</h1>
@@ -55,6 +56,14 @@ function confirmDeleteEventFromHome(eventId, eventName, participantCount) {
             form.method = 'POST';
             form.action = `/event/${eventId}/delete`;
             form.style.display = 'none';
+            
+            // Add CSRF token
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            csrfInput.value = document.querySelector('meta[name=csrf-token]').getAttribute('content');
+            form.appendChild(csrfInput);
+            
             document.body.appendChild(form);
             form.submit();
         } else {

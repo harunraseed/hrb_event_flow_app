@@ -1694,7 +1694,7 @@ def edit_participant(participant_id):
             participant.checked_in = form.checked_in.data
             
             if form.checked_in.data and not participant.checkin_time:
-                participant.checkin_time = datetime.now(timezone.utc)
+                participant.checkin_time = datetime.now()
             elif not form.checked_in.data:
                 participant.checkin_time = None
             
@@ -1746,7 +1746,7 @@ def toggle_checkin(participant_id):
         print(f"?? DEBUG: Redirect requested: {redirect_requested}")
         
         participant.checked_in = not participant.checked_in
-        participant.checkin_time = datetime.now(timezone.utc) if participant.checked_in else None
+        participant.checkin_time = datetime.now() if participant.checked_in else None
         db.session.commit()
         print(f"?? DEBUG: Database updated successfully")
         

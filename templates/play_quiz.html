@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ quiz.title }} - {{ event.name }}</title>
     
     <!-- Bootstrap CSS -->
@@ -375,10 +376,12 @@
                 }
                 
                 try {
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                     const response = await fetch(`/event/{{ event.id }}/quiz/join`, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
                         },
                         body: JSON.stringify({
                             name: name,
@@ -487,10 +490,12 @@
             
             async submitAnswer(answer, timeTaken) {
                 try {
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                     const response = await fetch(`/quiz/attempt/${this.attemptId}/answer`, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
                         },
                         body: JSON.stringify({
                             answer: answer,
