@@ -993,6 +993,128 @@ def migrate_reset_tokens():
             'error_type': type(e).__name__
         }), 500
 
+@app.route('/admin/setup/initial-user', methods=['GET', 'POST'])
+def setup_initial_user():
+    """Create the first superuser account in production"""
+    setup_secret = os.getenv('SETUP_SECRET', '')
+    provided_secret = request.args.get('secret', '')
+    
+    if not setup_secret or provided_secret != setup_secret:
+        return jsonify({'error': 'Unauthorized setup attempt'}), 403
+    
+    try:
+        with app.app_context():
+            # Check if any users exist
+            user_count = User.query.count()
+            
+            if user_count > 0:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Users already exist in the database. Initial setup not needed.',
+                    'user_count': user_count
+                }), 400
+            
+            # Get user details from query parameters or use defaults
+            username = request.args.get('username', 'admin')
+            email = request.args.get('email', 'admin@example.com')
+            password = request.args.get('password', '')
+            
+            if not password:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Password is required. Add ?password=your_password to the URL.'
+                }), 400
+            
+            if len(password) < 6:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Password must be at least 6 characters long.'
+                }), 400
+            
+            # Create the superuser
+            superuser = User(
+                username=username,
+                email=email,
+                role='superadmin',
+                is_active=True,
+                created_at=datetime.now(timezone.utc)
+            )
+            superuser.set_password(password)
+            
+            db.session.add(superuser)
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Superuser "{username}" created successfully!',
+                'username': username,
+                'email': email,
+                'role': 'superadmin',
+                'user_id': superuser.id
+            })
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to create superuser: {str(e)}',
+            'error_type': type(e).__name__
+        }), 500
+
+@app.route('/admin/setup/status')
+def setup_status():
+    """Check the setup status of the application"""
+    try:
+        with app.app_context():
+            # Check database connection
+            try:
+                db.session.execute(db.text('SELECT 1'))
+                db_connected = True
+            except:
+                db_connected = False
+            
+            # Check if tables exist
+            inspector = db.inspect(db.engine)
+            tables = inspector.get_table_names()
+            required_tables = ['users', 'events', 'participants']
+            tables_exist = all(table in tables for table in required_tables)
+            
+            # Check user count
+            user_count = 0
+            if 'users' in tables:
+                try:
+                    user_count = User.query.count()
+                except:
+                    user_count = 'error'
+            
+            # Check if reset_token columns exist
+            reset_columns_exist = False
+            if 'users' in tables:
+                try:
+                    columns = inspector.get_columns('users')
+                    column_names = [col['name'] for col in columns]
+                    reset_columns_exist = 'reset_token' in column_names and 'reset_token_expires' in column_names
+                except:
+                    reset_columns_exist = 'error'
+            
+            return jsonify({
+                'database_connected': db_connected,
+                'tables_exist': tables_exist,
+                'available_tables': tables,
+                'user_count': user_count,
+                'reset_columns_exist': reset_columns_exist,
+                'setup_needed': user_count == 0,
+                'migration_needed': not reset_columns_exist,
+                'environment': os.getenv('FLASK_ENV', 'production')
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Status check failed: {str(e)}',
+            'error_type': type(e).__name__
+        }), 500
+
 # Debug endpoint for checking database schema
 @app.route('/debug/db-schema')
 def debug_db_schema():
