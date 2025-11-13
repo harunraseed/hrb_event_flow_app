@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 import csv
 import io
 import base64
+import secrets
 from uuid import uuid4
 from utils.storage import StorageManager
 from utils.quiz_performance import (
@@ -730,7 +731,6 @@ class User(UserMixin, db.Model):
     
     def generate_reset_token(self):
         """Generate a password reset token"""
-        import secrets
         self.reset_token = secrets.token_urlsafe(32)
         self.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
         db.session.commit()
@@ -918,18 +918,111 @@ def logo_url_filter(logo_url):
         return logo_url
     return None
 
-# Debug endpoint for checking storage configuration
-@app.route('/debug/storage')
-def debug_storage():
-    """Debug endpoint to check storage configuration"""
-    debug_info = {
-        'github_repo': storage_manager.github_repo,
-        'github_branch': storage_manager.github_branch,
-        'github_token_set': bool(storage_manager.github_token),
-        'github_token_length': len(storage_manager.github_token) if storage_manager.github_token else 0,
-        'storage_type': storage_manager.storage_type
-    }
-    return f"<pre>{str(debug_info)}</pre>"
+# Database migration routes (for production deployment)
+@app.route('/admin/migrate/reset-tokens', methods=['GET', 'POST'])
+def migrate_reset_tokens():
+    """Run password reset token migration in production"""
+    # Security check - only allow if no users exist yet or if secret key matches
+    migration_secret = os.getenv('MIGRATION_SECRET', 'dev-migration-key')
+    provided_secret = request.args.get('secret', '')
+    
+    if provided_secret != migration_secret:
+        return jsonify({'error': 'Unauthorized migration attempt'}), 403
+    
+    try:
+        # Import migration function
+        import sys
+        import importlib.util
+        
+        # Check if migration is needed
+        with app.app_context():
+            inspector = db.inspect(db.engine)
+            columns = inspector.get_columns('users')
+            column_names = [col['name'] for col in columns]
+            
+            if 'reset_token' in column_names and 'reset_token_expires' in column_names:
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Password reset token columns already exist. Migration not needed.',
+                    'columns_exist': True
+                })
+            
+            # Perform migration
+            results = []
+            
+            # Add the new columns for PostgreSQL
+            if 'reset_token' not in column_names:
+                with db.engine.connect() as connection:
+                    connection.execute(db.text('ALTER TABLE users ADD COLUMN reset_token VARCHAR(100)'))
+                    connection.commit()
+                results.append('Added reset_token column')
+            
+            if 'reset_token_expires' not in column_names:
+                with db.engine.connect() as connection:
+                    # Use TIMESTAMP for PostgreSQL
+                    connection.execute(db.text('ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP'))
+                    connection.commit()
+                results.append('Added reset_token_expires column')
+            
+            # Verify migration
+            inspector = db.inspect(db.engine)
+            columns = inspector.get_columns('users')
+            column_names = [col['name'] for col in columns]
+            
+            required_columns = ['reset_token', 'reset_token_expires']
+            missing_columns = [col for col in required_columns if col not in column_names]
+            
+            if missing_columns:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Migration verification failed. Missing columns: {missing_columns}',
+                    'results': results
+                }), 500
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Password reset token migration completed successfully!',
+                'results': results,
+                'columns_added': len(results)
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Migration failed: {str(e)}',
+            'error_type': type(e).__name__
+        }), 500
+
+# Debug endpoint for checking database schema
+@app.route('/debug/db-schema')
+def debug_db_schema():
+    """Debug route to check database schema"""
+    try:
+        with app.app_context():
+            inspector = db.inspect(db.engine)
+            
+            # Get all tables
+            tables = inspector.get_table_names()
+            
+            schema_info = {}
+            for table in tables:
+                columns = inspector.get_columns(table)
+                schema_info[table] = {
+                    'columns': [{'name': col['name'], 'type': str(col['type'])} for col in columns],
+                    'column_count': len(columns)
+                }
+            
+            return jsonify({
+                'database_url': app.config['SQLALCHEMY_DATABASE_URI'][:50] + '...',
+                'tables': list(tables),
+                'schema': schema_info,
+                'total_tables': len(tables)
+            })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
 
 # Routes
 
