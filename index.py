@@ -1,5 +1,6 @@
 ﻿import os
 from datetime import datetime, timezone, timedelta
+from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import joinedload
@@ -63,7 +64,7 @@ app.config['MAIL_USE_SSL'] = False
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
-app.config['MAIL_DEBUG'] = os.getenv('FLASK_ENV') == 'development'
+app.config['MAIL_DEBUG'] = False  # Disable verbose SMTP logging
 app.config['MAIL_SUPPRESS_SEND'] = False
 
 # Email timeout and retry settings for serverless
@@ -877,6 +878,19 @@ def require_admin(f):
         if not current_user.is_admin():
             flash('Access denied. Admin privileges required.', 'error')
             return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_admin_ajax(f):
+    """Decorator to require admin or superadmin role for AJAX requests"""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin():
+            return jsonify({
+                'success': False,
+                'message': 'Access denied. Admin privileges required.'
+            }), 403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -2004,6 +2018,73 @@ def send_test_email_debug():
             'error_type': type(e).__name__
         }), 500
 
+@app.route('/debug/participants')
+def list_participants_debug():
+    """List all participants with their IDs for testing purposes."""
+    try:
+        participants = Participant.query.all()
+        
+        participant_list = []
+        for p in participants:
+            participant_list.append({
+                'id': p.id,
+                'name': p.name,
+                'email': p.email,
+                'event_name': p.event.name if p.event else 'No Event',
+                'event_id': p.event_id,
+                'ticket_number': p.ticket_number,
+                'checked_in': p.checked_in,
+                'email_sent': p.email_sent
+            })
+        
+        return jsonify({
+            'success': True,
+            'total_participants': len(participant_list),
+            'participants': participant_list[:10],  # Limit to first 10 for readability
+            'note': 'Showing first 10 participants only. Use for testing email functions.'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/debug/participants/<int:event_id>')
+def list_event_participants_debug(event_id):
+    """List participants for a specific event with their IDs."""
+    try:
+        event = Event.query.get_or_404(event_id)
+        participants = Participant.query.filter_by(event_id=event_id).all()
+        
+        participant_list = []
+        for p in participants:
+            participant_list.append({
+                'id': p.id,
+                'name': p.name,
+                'email': p.email,
+                'ticket_number': p.ticket_number,
+                'checked_in': p.checked_in,
+                'email_sent': p.email_sent
+            })
+        
+        return jsonify({
+            'success': True,
+            'event_name': event.name,
+            'event_id': event_id,
+            'total_participants': len(participant_list),
+            'participants': participant_list,
+            'test_urls': [
+                f'/test_single_email/{p["id"]}' for p in participant_list[:3]
+            ] if participant_list else []
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/event/<int:event_id>/export')
 @require_admin
 def export_attendance(event_id):
@@ -2128,15 +2209,23 @@ def bulk_resend_tickets():
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/participant/<int:participant_id>/resend_certificate', methods=['POST'])
-@require_admin
+@csrf.exempt  # Temporarily exempt to test CSRF issue
+@require_admin_ajax
 def resend_certificate(participant_id):
     """Resend certificate to a single participant via AJAX."""
     try:
+        print(f"🚀 Starting resend certificate for participant ID: {participant_id}")
+        
         participant = Participant.query.get_or_404(participant_id)
         event = participant.event
         
+        print(f"📋 Participant: {participant.name} ({participant.email})")
+        print(f"🎯 Event: {event.name} (ID: {event.id})")
+        print(f"✅ Checked in: {participant.checked_in}")
+        
         # Check if participant is checked in
         if not participant.checked_in:
+            print(f"❌ Participant {participant.name} is not checked in")
             return jsonify({
                 'success': False,
                 'message': 'Participant must be checked in to receive a certificate'
@@ -2144,7 +2233,10 @@ def resend_certificate(participant_id):
         
         # Check if certificate configuration exists
         cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+        print(f"📜 Certificate config exists: {cert_config is not None}")
+        
         if not cert_config:
+            print(f"❌ No certificate configuration found for event {event.id}")
             return jsonify({
                 'success': False,
                 'message': 'Certificate configuration not found for this event'
@@ -2156,11 +2248,15 @@ def resend_certificate(participant_id):
             participant_id=participant.id
         ).first()
         
+        print(f"📜 Existing certificate: {existing_cert is not None}")
+        
         if existing_cert:
             # Resend existing certificate
             certificate = existing_cert
+            print(f"🔄 Using existing certificate: {certificate.certificate_number}")
         else:
             # Generate new certificate
+            print("🆕 Creating new certificate...")
             certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
             
             certificate = Certificate(
@@ -2185,16 +2281,21 @@ def resend_certificate(participant_id):
             
             db.session.add(certificate)
             db.session.commit()
+            print(f"✅ New certificate created: {certificate_number}")
         
         # Send certificate email
+        print(f"📧 Attempting to send certificate email to {participant.email}...")
         success = send_certificate_email(participant, event, certificate)
+        print(f"📧 Email send result: {success}")
         
         if success:
+            print(f"✅ Certificate sent successfully to {participant.email}")
             return jsonify({
                 'success': True,
                 'message': f'Certificate sent successfully to {participant.email}'
             })
         else:
+            print(f"❌ Failed to send certificate to {participant.email}")
             return jsonify({
                 'success': False,
                 'message': 'Failed to send certificate email'
@@ -3096,11 +3197,11 @@ def generate_certificate_with_reportlab(participant, event, certificate):
         return pdf_data
         
     except Exception as e:
-        print(f"❌ Certificate PDF generation failed: {e}")
+        print(f"❌ Certificate PDF generation failed: {str(e)[:100]}...")  # Limit error message length
         return None
         
     except Exception as e:
-        print(f"❌ ReportLab PDF generation error: {str(e)}")
+        print(f"❌ ReportLab PDF generation error: {str(e)[:100]}...")  # Limit error message length
         import traceback
         traceback.print_exc()
         return None
@@ -3865,6 +3966,262 @@ def generate_quiz_qr(event_id):
             return Response(img_io.getvalue(), mimetype='image/png')
         except:
             return redirect(url_for('play_quiz', event_id=event_id))
+
+@app.route('/debug/test_certificate_resend/<int:participant_id>')
+def debug_test_certificate_resend(participant_id):
+    """Debug endpoint to test certificate resending functionality"""
+    try:
+        participant = Participant.query.get_or_404(participant_id)
+        event = participant.event
+        
+        debug_info = {
+            'participant_id': participant.id,
+            'participant_name': participant.name,
+            'participant_email': participant.email,
+            'participant_checked_in': participant.checked_in,
+            'event_id': event.id,
+            'event_name': event.name,
+            'has_certificate_config': False,
+            'existing_certificate': False,
+            'email_config_status': 'checking...',
+            'test_url': f'/test_certificate_resend/{participant_id}'
+        }
+        
+        # Check certificate configuration
+        cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+        debug_info['has_certificate_config'] = cert_config is not None
+        if cert_config:
+            debug_info['cert_config_type'] = cert_config.certificate_type
+        
+        # Check existing certificate
+        existing_cert = Certificate.query.filter_by(
+            event_id=event.id, 
+            participant_id=participant.id
+        ).first()
+        debug_info['existing_certificate'] = existing_cert is not None
+        if existing_cert:
+            debug_info['cert_number'] = existing_cert.certificate_number
+            debug_info['cert_email_sent'] = existing_cert.email_sent
+        
+        # Check email configuration
+        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
+        missing_configs = [config for config in required_configs if not app.config.get(config)]
+        debug_info['email_config_status'] = 'OK' if not missing_configs else f'Missing: {missing_configs}'
+        
+        return f"""
+        <h1>Certificate Resend Debug - {participant.name}</h1>
+        <pre style="background: #f5f5f5; padding: 20px; border-radius: 5px;">
+{json.dumps(debug_info, indent=2)}
+        </pre>
+        <br>
+        <a href="{debug_info['test_url']}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            Test Certificate Resend (GET request)
+        </a>
+        <br><br>
+        <a href="/debug/participants/{event.id}" style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+            Back to Participants List
+        </a>
+        """
+        
+    except Exception as e:
+        return f"<h1>Debug Error</h1><pre>Error: {str(e)}</pre>"
+
+@app.route('/test_certificate_resend/<int:participant_id>')
+def test_certificate_resend(participant_id):
+    """Test certificate resending without CSRF (GET request for testing)"""
+    try:
+        participant = Participant.query.get_or_404(participant_id)
+        event = participant.event
+        
+        # Check if participant is checked in
+        if not participant.checked_in:
+            return jsonify({
+                'success': False,
+                'message': 'Participant must be checked in to receive a certificate',
+                'debug': 'Participant not checked in'
+            })
+        
+        # Check if certificate configuration exists
+        cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+        if not cert_config:
+            return jsonify({
+                'success': False,
+                'message': 'Certificate configuration not found for this event',
+                'debug': 'No certificate configuration'
+            })
+        
+        # Check if participant already has a certificate
+        existing_cert = Certificate.query.filter_by(
+            event_id=event.id, 
+            participant_id=participant.id
+        ).first()
+        
+        if existing_cert:
+            # Resend existing certificate
+            certificate = existing_cert
+            debug_action = 'Resending existing certificate'
+        else:
+            # Generate new certificate
+            certificate_number = f"CERT-{event.id}-{participant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+            
+            certificate = Certificate(
+                event_id=event.id,
+                participant_id=participant.id,
+                certificate_number=certificate_number,
+                certificate_type=cert_config.certificate_type,
+                organizer_name=cert_config.organizer_name,
+                sponsor_name=cert_config.sponsor_name,
+                event_location=cert_config.event_location,
+                event_theme=cert_config.event_theme,
+                organizer_logo_url=cert_config.organizer_logo_url,
+                sponsor_logo_url=cert_config.sponsor_logo_url,
+                signature1_name=cert_config.signature1_name,
+                signature1_title=cert_config.signature1_title,
+                signature1_image_url=cert_config.signature1_image_url,
+                signature2_name=cert_config.signature2_name,
+                signature2_title=cert_config.signature2_title,
+                signature2_image_url=cert_config.signature2_image_url,
+                issued_date=datetime.now(timezone.utc)
+            )
+            
+            db.session.add(certificate)
+            db.session.commit()
+            debug_action = 'Generated new certificate'
+        
+        # Send certificate email
+        print(f"🧪 Testing certificate email send for {participant.email}")
+        success = send_certificate_email(participant, event, certificate)
+        
+        return jsonify({
+            'success': success,
+            'message': f'Certificate {"sent" if success else "failed to send"} to {participant.email}',
+            'debug': {
+                'action': debug_action,
+                'participant_id': participant.id,
+                'event_id': event.id,
+                'certificate_number': certificate.certificate_number,
+                'email_status': 'sent' if success else 'failed'
+            }
+        })
+            
+    except Exception as e:
+        print(f"❌ Test certificate resend error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error in test: {str(e)}',
+            'debug': f'Exception: {type(e).__name__}: {str(e)}'
+        })
+
+@app.route('/debug/resend_certificate/<int:participant_id>', methods=['GET'])
+def debug_resend_certificate(participant_id):
+    """Debug endpoint to test resend certificate functionality with detailed logging."""
+    try:
+        participant = Participant.query.get(participant_id)
+        if not participant:
+            return jsonify({
+                'success': False,
+                'message': f'Participant with ID {participant_id} not found'
+            }), 404
+        
+        event = participant.event
+        
+        # Check participant status
+        status_info = {
+            'participant_id': participant.id,
+            'participant_name': participant.name,
+            'participant_email': participant.email,
+            'checked_in': participant.checked_in,
+            'event_id': event.id,
+            'event_name': event.name
+        }
+        
+        # Check certificate config
+        cert_config = CertificateConfig.query.filter_by(event_id=event.id).first()
+        config_info = {
+            'config_exists': cert_config is not None,
+            'config_details': {}
+        }
+        
+        if cert_config:
+            config_info['config_details'] = {
+                'certificate_type': cert_config.certificate_type,
+                'organizer_name': cert_config.organizer_name,
+                'sponsor_name': cert_config.sponsor_name
+            }
+        
+        # Check existing certificate
+        existing_cert = Certificate.query.filter_by(
+            event_id=event.id, 
+            participant_id=participant.id
+        ).first()
+        
+        cert_info = {
+            'existing_certificate': existing_cert is not None
+        }
+        
+        if existing_cert:
+            cert_info['certificate_details'] = {
+                'certificate_number': existing_cert.certificate_number,
+                'issued_date': existing_cert.issued_date.isoformat() if existing_cert.issued_date else None
+            }
+        
+        return jsonify({
+            'success': True,
+            'debug_info': {
+                'participant': status_info,
+                'certificate_config': config_info,
+                'certificate': cert_info
+            },
+            'can_resend': participant.checked_in and cert_config is not None,
+            'test_resend_url': f'/participant/{participant_id}/resend_certificate'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Debug error: {str(e)}',
+            'debug': f'Exception: {type(e).__name__}: {str(e)}'
+        }), 500
+
+@app.route('/debug/email_config', methods=['GET'])
+def debug_email_config_v2():
+    """Debug endpoint to check email configuration."""
+    try:
+        config_status = {
+            'MAIL_SERVER': app.config.get('MAIL_SERVER'),
+            'MAIL_PORT': app.config.get('MAIL_PORT'),
+            'MAIL_USE_TLS': app.config.get('MAIL_USE_TLS'),
+            'MAIL_USE_SSL': app.config.get('MAIL_USE_SSL'),
+            'MAIL_USERNAME': app.config.get('MAIL_USERNAME'),
+            'MAIL_PASSWORD': '***' if app.config.get('MAIL_PASSWORD') else None,
+            'MAIL_DEFAULT_SENDER': app.config.get('MAIL_DEFAULT_SENDER')
+        }
+        
+        # Test SMTP connection
+        try:
+            from flask_mail import Message
+            test_msg = Message(
+                subject="Test Connection",
+                sender=app.config['MAIL_DEFAULT_SENDER'],
+                recipients=['test@example.com']
+            )
+            # Don't actually send, just test connection
+            with mail.connect() as conn:
+                smtp_status = "Connection successful"
+        except Exception as smtp_error:
+            smtp_status = f"Connection failed: {str(smtp_error)}"
+        
+        return jsonify({
+            'success': True,
+            'email_config': config_status,
+            'smtp_test': smtp_status
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Email config check error: {str(e)}'
+        }), 500
 
 # Export for Vercel
 application = app

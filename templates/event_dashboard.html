@@ -784,28 +784,73 @@ function resendTicket(participantId) {
 
 // Resend certificate
 function resendCertificate(participantId, participantName) {
+    console.log('resendCertificate called with:', participantId, participantName);
+    
     if (confirm(`Resend certificate to ${participantName}?`)) {
-        // Show loading state
-        const button = event.target.closest('.dropdown');
-        const originalText = button.querySelector('button').innerHTML;
-        button.querySelector('button').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        button.querySelector('button').disabled = true;
+        // Show loading state - find the button that was clicked
+        const buttons = document.querySelectorAll(`[onclick*="resendCertificate(${participantId}"]`);
+        let button = null;
+        let originalText = '';
         
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        if (buttons.length > 0) {
+            // Find the dropdown container
+            button = buttons[0].closest('.dropdown');
+            if (button) {
+                originalText = button.querySelector('button').innerHTML;
+                button.querySelector('button').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                button.querySelector('button').disabled = true;
+            }
+        }
+        
+        // Get CSRF token safely
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        console.log('CSRF token:', csrfToken ? 'found' : 'not found');
+        
+        // Prepare headers
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        // Add CSRF token header only if token exists
+        if (csrfToken) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
         
         fetch(`/participant/${participantId}/resend_certificate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
+            headers: headers,
             body: JSON.stringify({})
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers);
+            
+            // Handle authentication errors
+            if (response.status === 401 || response.status === 403) {
+                throw new Error('Access denied. Admin privileges required.');
+            }
+            
+            // Handle redirect responses (which shouldn't happen for AJAX)
+            if (response.status >= 300 && response.status < 400) {
+                throw new Error('Authentication required. Please log in as admin.');
+            }
+            
+            // Handle server errors
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
+            
+            return response.json();
+        })
         .then(data => {
+            console.log('Response data:', data);
+            
             // Restore button state
-            button.querySelector('button').innerHTML = originalText;
-            button.querySelector('button').disabled = false;
+            if (button) {
+                button.querySelector('button').innerHTML = originalText;
+                button.querySelector('button').disabled = false;
+            }
             
             if (data.success) {
                 // Show success message
@@ -830,11 +875,16 @@ function resendCertificate(participantId, participantName) {
             }
         })
         .catch(error => {
-            // Restore button state
-            button.querySelector('button').innerHTML = originalText;
-            button.querySelector('button').disabled = false;
+            console.error('Fetch error:', error);
+            console.error('Error type:', typeof error);
+            console.error('Error message:', error.message);
             
-            console.error('Error:', error);
+            // Restore button state
+            if (button) {
+                button.querySelector('button').innerHTML = originalText;
+                button.querySelector('button').disabled = false;
+            }
+            
             alert('Failed to resend certificate: ' + error.message);
         });
     }
@@ -998,5 +1048,28 @@ document.addEventListener('DOMContentLoaded', function() {
 <form id="deleteEventForm" method="POST" action="{{ url_for('delete_event', event_id=event.id) }}" style="display: none;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 </form>
+
+<script>
+// Debug script to check if resendCertificate function exists and onclick attributes are correct
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Page loaded - checking resendCertificate function...');
+    console.log('resendCertificate function exists:', typeof resendCertificate);
+    
+    // Find all elements with resendCertificate onclick
+    const resendLinks = document.querySelectorAll('[onclick*="resendCertificate"]');
+    console.log('Found', resendLinks.length, 'resend certificate links');
+    
+    resendLinks.forEach((link, index) => {
+        console.log(`Link ${index}:`, link.onclick, link.getAttribute('onclick'));
+    });
+    
+    // Test function execution
+    if (typeof resendCertificate === 'function') {
+        console.log('resendCertificate function is available');
+    } else {
+        console.error('resendCertificate function is NOT available');
+    }
+});
+</script>
 
 {% endblock %}
