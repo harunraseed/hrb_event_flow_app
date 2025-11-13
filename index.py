@@ -55,13 +55,20 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Email configuration
+# Email configuration with enhanced production support
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = False
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+app.config['MAIL_DEBUG'] = os.getenv('FLASK_ENV') == 'development'
+app.config['MAIL_SUPPRESS_SEND'] = False
+
+# Email timeout and retry settings for serverless
+app.config['MAIL_TIMEOUT'] = 30  # 30 seconds timeout
+app.config['MAIL_MAX_EMAILS'] = 10  # Limit batch size for serverless
 
 db = SQLAlchemy(app)
 mail = Mail(app)
@@ -139,37 +146,60 @@ def inject_csrf_token():
 # Helper functions for email
 def test_email_connection():
     """Test email connection without sending."""
-    import smtplib
-    
-    mail_server = app.config.get('MAIL_SERVER')
-    mail_port = app.config.get('MAIL_PORT')
-    mail_username = app.config.get('MAIL_USERNAME')
-    mail_password = app.config.get('MAIL_PASSWORD')
-    
-    print(f"Testing connection to {mail_server}:{mail_port}")
-    
-    server = smtplib.SMTP(mail_server, mail_port, timeout=10)
-    server.starttls()
-    server.login(mail_username, mail_password)
-    server.quit()
-    
-    print("Email connection test successful")
+    try:
+        import smtplib
+        
+        mail_server = app.config.get('MAIL_SERVER')
+        mail_port = app.config.get('MAIL_PORT')
+        mail_username = app.config.get('MAIL_USERNAME')
+        mail_password = app.config.get('MAIL_PASSWORD')
+        
+        print(f"🔍 Testing connection to {mail_server}:{mail_port}")
+        print(f"📧 Using username: {mail_username}")
+        
+        if not mail_username or not mail_password:
+            raise Exception("MAIL_USERNAME or MAIL_PASSWORD not configured")
+        
+        server = smtplib.SMTP(mail_server, mail_port, timeout=30)
+        server.starttls()
+        server.login(mail_username, mail_password)
+        server.quit()
+        
+        print("✅ Email connection test successful")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Email connection test failed: {str(e)}")
+        return False
 
 def send_ticket_email(participant, event):
     """Send individual ticket email to a participant."""
     try:
-        print(f"Preparing email for {participant.email}")
+        print(f"🚀 Preparing email for {participant.email}")
+        
+        # Validate email configuration
+        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
+        missing_configs = [config for config in required_configs if not app.config.get(config)]
+        
+        if missing_configs:
+            error_msg = f"Missing email configuration: {', '.join(missing_configs)}"
+            print(f"❌ {error_msg}")
+            raise Exception(error_msg)
         
         subject = f"Registration Confirmation - Your Ticket for {event.name}"
         
-        # Create message
+        # Create message with explicit sender
         msg = Message(
             subject=subject,
+            sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[participant.email],
             html=render_template('email/ticket_email.html', 
                                event=event, 
                                participant=participant)
         )
+        
+        print(f"📧 Sending email to {participant.email}")
+        print(f"🔗 SMTP: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
         
         # Send email
         mail.send(msg)
@@ -180,9 +210,12 @@ def send_ticket_email(participant, event):
         participant.email_sent_date = datetime.now(timezone.utc)
         db.session.commit()
         
+        return True
+        
     except Exception as e:
         print(f"❌ Failed to send email to {participant.email}: {str(e)}")
-        raise e
+        print(f"🔍 Error type: {type(e).__name__}")
+        return False
 
 # WTForms
 class CreateEventForm(FlaskForm):
@@ -1838,19 +1871,55 @@ def send_emails(event_id):
     return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/debug/email-config')
+@app.route('/debug/email')
 def debug_email_config():
-    """Debug route to check email configuration."""
-    config_info = {
-        'MAIL_SERVER': app.config.get('MAIL_SERVER'),
-        'MAIL_PORT': app.config.get('MAIL_PORT'),
-        'MAIL_USERNAME': app.config.get('MAIL_USERNAME'),
-        'MAIL_USE_TLS': app.config.get('MAIL_USE_TLS'),
-        'MAIL_USE_SSL': app.config.get('MAIL_USE_SSL'),
-        'MAIL_DEFAULT_SENDER': app.config.get('MAIL_DEFAULT_SENDER'),
-        'MAIL_PASSWORD_SET': bool(app.config.get('MAIL_PASSWORD')),
-        'MAIL_PASSWORD_LENGTH': len(app.config.get('MAIL_PASSWORD', '')),
-    }
-    return jsonify(config_info)
+    """Debug route to check email configuration and test connection."""
+    try:
+        # Basic config info
+        config_info = {
+            'MAIL_SERVER': app.config.get('MAIL_SERVER'),
+            'MAIL_PORT': app.config.get('MAIL_PORT'),
+            'MAIL_USERNAME': app.config.get('MAIL_USERNAME'),
+            'MAIL_USE_TLS': app.config.get('MAIL_USE_TLS'),
+            'MAIL_USE_SSL': app.config.get('MAIL_USE_SSL'),
+            'MAIL_DEFAULT_SENDER': app.config.get('MAIL_DEFAULT_SENDER'),
+            'MAIL_PASSWORD_SET': bool(app.config.get('MAIL_PASSWORD')),
+            'MAIL_PASSWORD_LENGTH': len(app.config.get('MAIL_PASSWORD', '')),
+            'MAIL_TIMEOUT': app.config.get('MAIL_TIMEOUT'),
+            'MAIL_DEBUG': app.config.get('MAIL_DEBUG'),
+        }
+        
+        # Environment check
+        env_vars = {
+            'MAIL_SERVER_ENV': bool(os.getenv('MAIL_SERVER')),
+            'MAIL_USERNAME_ENV': bool(os.getenv('MAIL_USERNAME')),
+            'MAIL_PASSWORD_ENV': bool(os.getenv('MAIL_PASSWORD')),
+            'MAIL_DEFAULT_SENDER_ENV': bool(os.getenv('MAIL_DEFAULT_SENDER')),
+        }
+        
+        # Test connection
+        connection_test = {
+            'connection_successful': False,
+            'error_message': None
+        }
+        
+        try:
+            connection_test['connection_successful'] = test_email_connection()
+        except Exception as e:
+            connection_test['error_message'] = str(e)
+        
+        return jsonify({
+            'config': config_info,
+            'environment': env_vars,
+            'connection_test': connection_test,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
 
 @app.route('/test_single_email/<int:participant_id>')
 def test_single_email(participant_id):
@@ -1862,18 +1931,78 @@ def test_single_email(participant_id):
         print(f"Testing single email to {participant.email}")
         
         # Test connection first
-        test_email_connection()
+        connection_success = test_email_connection()
+        if not connection_success:
+            return jsonify({
+                'success': False,
+                'error': 'Email connection test failed',
+                'participant': participant.email
+            }), 500
+        
         print("Single test: Email connection successful")
         
         # Send test email
-        send_ticket_email(participant, event)
+        email_success = send_ticket_email(participant, event)
         
-        flash(f'? Test email sent successfully to {participant.email}!', 'success')
+        if email_success:
+            return jsonify({
+                'success': True,
+                'message': f'Test email sent successfully to {participant.email}!',
+                'participant': participant.email
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Email sending failed',
+                'participant': participant.email
+            }), 500
+            
     except Exception as e:
         print(f"Single email test failed: {str(e)}")
-        flash(f'? Test email failed: {str(e)}', 'error')
-    
-    return redirect(url_for('event_dashboard', event_id=event.id))
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'participant': participant.email
+        }), 500
+
+@app.route('/debug/send_test_email')
+def send_test_email_debug():
+    """Send a simple test email for debugging purposes."""
+    try:
+        # Check if we have required config
+        if not app.config.get('MAIL_USERNAME') or not app.config.get('MAIL_PASSWORD'):
+            return jsonify({
+                'success': False,
+                'error': 'Email credentials not configured'
+            }), 500
+        
+        test_email = app.config.get('MAIL_USERNAME')  # Send to self
+        
+        # Create simple test message
+        msg = Message(
+            subject="Test Email from Event Ticketing App",
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            recipients=[test_email],
+            body="This is a test email to verify email functionality in production.",
+            html="<p>This is a test email to verify email functionality in production.</p>"
+        )
+        
+        print(f"🧪 Sending test email to {test_email}")
+        mail.send(msg)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Test email sent successfully to {test_email}',
+            'recipient': test_email
+        })
+        
+    except Exception as e:
+        print(f"❌ Test email failed: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
 
 @app.route('/event/<int:event_id>/export')
 @require_admin
@@ -2611,6 +2740,17 @@ def generate_certificates(event_id):
 def send_certificate_email(participant, event, certificate):
     """Send certificate email with PDF attachment"""
     try:
+        print(f"🚀 Preparing certificate email for {participant.email}")
+        
+        # Validate email configuration
+        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
+        missing_configs = [config for config in required_configs if not app.config.get(config)]
+        
+        if missing_configs:
+            error_msg = f"Missing email configuration: {', '.join(missing_configs)}"
+            print(f"❌ {error_msg}")
+            return False
+        
         # Create certificate email
         subject = f"Your Certificate - {event.name}"
         
@@ -2620,10 +2760,10 @@ def send_certificate_email(participant, event, certificate):
                                    participant=participant,
                                    certificate=certificate)
         
-        # Create email message
+        # Create email message with explicit sender
         msg = Message(
             subject=subject,
-            sender=app.config['MAIL_USERNAME'],
+            sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[participant.email],
             html=email_html
         )
@@ -2634,14 +2774,16 @@ def send_certificate_email(participant, event, certificate):
             if pdf_data:
                 filename = f"Certificate_{participant.name.replace(' ', '_')}_{event.name.replace(' ', '_')}.pdf"
                 msg.attach(filename, "application/pdf", pdf_data)
-                print(f"? PDF certificate attached: {filename}")
+                print(f"📎 PDF certificate attached: {filename}")
             else:
-                print("?? PDF generation failed, sending email without attachment")
+                print("⚠️ PDF generation failed, sending email without attachment")
         except Exception as pdf_error:
-            print(f"?? PDF generation error: {str(pdf_error)}, sending email without attachment")
+            print(f"⚠️ PDF generation error: {str(pdf_error)}, sending email without attachment")
         
-        print(f"?? Sending certificate email to {participant.email}")
+        print(f"📧 Sending certificate email to {participant.email}")
+        print(f"🔗 SMTP: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
         
+        # Send email
         mail.send(msg)
         
         # Update certificate record
@@ -2649,11 +2791,12 @@ def send_certificate_email(participant, event, certificate):
         certificate.email_sent_date = datetime.now(timezone.utc)
         db.session.commit()
         
-        print(f"? Certificate email sent successfully to {participant.email}")
+        print(f"✅ Certificate email sent successfully to {participant.email}")
         return True
         
     except Exception as e:
-        print(f"? Error sending certificate email to {participant.email}: {str(e)}")
+        print(f"❌ Error sending certificate email to {participant.email}: {str(e)}")
+        print(f"🔍 Error type: {type(e).__name__}")
         return False
 
 def generate_certificate_pdf(participant, event, certificate):
