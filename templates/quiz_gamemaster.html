@@ -202,6 +202,117 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Fastest Finger Stats -->
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card stats-card text-center p-3 border-warning">
+                    <h3 class="mb-1 text-warning" id="fastestTime">N/A</h3>
+                    <small>🚀 Fastest Time</small>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card stats-card text-center p-3 border-info">
+                    <h3 class="mb-1 text-info" id="averageTime">N/A</h3>
+                    <small>📊 Average Time</small>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card stats-card text-center p-3 border-success">
+                    <h3 class="mb-1 text-success" id="fastestPlayer">N/A</h3>
+                    <small>👑 Speed Leader</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Participants Joining -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">
+                                <i class="bi bi-people-fill me-2"></i>
+                                Live Participants (<span id="liveParticipantCount">0</span>)
+                            </h6>
+                            <div class="badge bg-light text-success" id="joinStatus">
+                                <i class="bi bi-wifi"></i> Live
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body" style="max-height: 250px; overflow-y: auto;">
+                        <div id="liveParticipantsContainer">
+                            <div class="text-center py-3 text-muted">
+                                <i class="bi bi-person-plus fa-2x mb-2"></i>
+                                <p>Waiting for participants to join...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <h6 class="mb-0">
+                            <i class="bi bi-controller me-2"></i>
+                            Quiz Master Controls
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            {% if not quiz.is_active and not quiz.is_ended %}
+                                <button class="btn btn-success btn-lg" onclick="startQuizAsGamemaster()">
+                                    <i class="bi bi-play-circle-fill me-2"></i>
+                                    Start Quiz for All Participants
+                                </button>
+                                <small class="text-muted text-center">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Wait for participants to join, then start the quiz
+                                </small>
+                            {% elif quiz.is_active %}
+                                <button class="btn btn-danger btn-lg" onclick="endQuizAsGamemaster()">
+                                    <i class="bi bi-stop-circle-fill me-2"></i>
+                                    End Quiz Now
+                                </button>
+                                <small class="text-muted text-center">
+                                    <i class="bi bi-clock me-1"></i>
+                                    Quiz is currently active
+                                </small>
+                            {% else %}
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-flag-fill me-2"></i>
+                                    Quiz has ended
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="border rounded p-2">
+                                    <strong id="waitingCount">0</strong>
+                                    <br><small class="text-muted">Waiting</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="border rounded p-2">
+                                    <strong id="activeCount">0</strong>
+                                    <br><small class="text-muted">Playing</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="border rounded p-2">
+                                    <strong id="completedCount">0</strong>
+                                    <br><small class="text-muted">Finished</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Live Leaderboard -->
         <div class="row">
@@ -304,10 +415,31 @@
             const leaderboard = data.leaderboard;
             const completed = leaderboard.filter(p => p.is_completed).length;
             const inProgress = leaderboard.length - completed;
+            const completedParticipants = leaderboard.filter(p => p.is_completed);
             
             document.getElementById('totalParticipants').textContent = leaderboard.length;
             document.getElementById('completedCount').textContent = completed;
             document.getElementById('inProgressCount').textContent = inProgress;
+            
+            // Update fastest finger statistics
+            if (completedParticipants.length > 0) {
+                // Find fastest time
+                const fastestParticipant = completedParticipants.reduce((fastest, current) => 
+                    current.total_time_taken < fastest.total_time_taken ? current : fastest
+                );
+                
+                // Calculate average time
+                const totalTime = completedParticipants.reduce((sum, p) => sum + p.total_time_taken, 0);
+                const averageTime = totalTime / completedParticipants.length;
+                
+                document.getElementById('fastestTime').textContent = formatMicrosecondTime(fastestParticipant.total_time_taken);
+                document.getElementById('averageTime').textContent = formatMicrosecondTime(averageTime);
+                document.getElementById('fastestPlayer').textContent = fastestParticipant.participant_name;
+            } else {
+                document.getElementById('fastestTime').textContent = 'N/A';
+                document.getElementById('averageTime').textContent = 'N/A';
+                document.getElementById('fastestPlayer').textContent = 'N/A';
+            }
         }
         
         function updateQuizStatus(status) {
@@ -341,6 +473,21 @@
                 </span>
                 <small class="text-muted ms-2">${status.current_participants}/${status.participant_limit} participants</small>
             `;
+        }
+        
+        // Format time for microsecond precision display (fastest finger detection)
+        function formatMicrosecondTime(seconds) {
+            if (!seconds) return 'N/A';
+            
+            const milliseconds = seconds * 1000;
+            
+            if (milliseconds < 100) {
+                return `${milliseconds.toFixed(3)}ms`;
+            } else if (milliseconds < 1000) {
+                return `${milliseconds.toFixed(1)}ms`;
+            } else {
+                return `${seconds.toFixed(3)}s`;
+            }
         }
         
         function updateLeaderboard(leaderboard) {
@@ -396,8 +543,8 @@
                                             </small>
                                             <small class="text-muted">
                                                 ${participant.is_completed ? 
-                                                    `Completed at: ${participant.completion_time}` : 
-                                                    `Time: ${participant.total_time_taken}s`
+                                                    `🏁 Finished: ${formatMicrosecondTime(participant.total_time_taken)}` : 
+                                                    `⏱️ Time: ${formatMicrosecondTime(participant.total_time_taken)}`
                                                 }
                                             </small>
                                         </div>
@@ -443,10 +590,153 @@
             `;
         }
         
+        // Gamemaster Quiz Control Functions
+        function startQuizAsGamemaster() {
+            if (confirm('🚀 Start the quiz for all participants?\n\nThis will begin the quiz session and participants will start receiving questions.')) {
+                fetch(`/event/{{ event.id }}/quiz/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Quiz started successfully! Participants can now begin.');
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Network error occurred');
+                });
+            }
+        }
+
+        function endQuizAsGamemaster() {
+            if (confirm('🛑 End the quiz now?\n\nThis will stop the quiz for all participants and show final results.')) {
+                fetch(`/event/{{ event.id }}/quiz/end`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Quiz ended successfully! Final results are now available.');
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Network error occurred');
+                });
+            }
+        }
+
+        // Live Participants Tracking (Enhanced)
+        function loadLiveParticipants() {
+            fetch(`/api/quiz/${quizId}/live-participants`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateLiveParticipants(data.participants);
+                        updateParticipantCounts(data.participants);
+                    }
+                })
+                .catch(error => console.error('Error loading participants:', error));
+        }
+
+        function updateLiveParticipants(participants) {
+            const container = document.getElementById('liveParticipantsContainer');
+            const count = document.getElementById('liveParticipantCount');
+            
+            count.textContent = participants.length;
+            
+            if (participants.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-3 text-muted">
+                        <i class="bi bi-person-plus fa-2x mb-2"></i>
+                        <p>Waiting for participants to join...</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const participantsList = participants.map(participant => {
+                const statusColor = participant.is_completed ? 'success' : 
+                                  participant.is_active ? 'primary' : 'secondary';
+                const statusIcon = participant.is_completed ? 'check-circle-fill' : 
+                                 participant.is_active ? 'play-circle-fill' : 'person-circle';
+                                 
+                return `
+                    <div class="d-flex align-items-center mb-2 p-2 border rounded bg-light">
+                        <i class="bi bi-${statusIcon} text-${statusColor} me-2"></i>
+                        <div class="flex-grow-1">
+                            <strong>${participant.name}</strong>
+                            <br><small class="text-muted">
+                                ${participant.is_completed ? 'Completed' : 
+                                  participant.is_active ? 'Taking Quiz' : 'Waiting'}
+                            </small>
+                        </div>
+                        <div class="text-end">
+                            ${participant.is_completed ? 
+                                `<span class="badge bg-success">${participant.score || 0} pts</span>` : 
+                                participant.is_active ? 
+                                `<span class="badge bg-primary">Q${participant.current_question || 1}</span>` :
+                                `<span class="badge bg-secondary">Ready</span>`
+                            }
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = participantsList;
+        }
+
+        function updateParticipantCounts(participants) {
+            const waiting = participants.filter(p => !p.is_active && !p.is_completed).length;
+            const active = participants.filter(p => p.is_active && !p.is_completed).length;
+            const completed = participants.filter(p => p.is_completed).length;
+            
+            document.getElementById('waitingCount').textContent = waiting;
+            document.getElementById('activeCount').textContent = active;
+            document.getElementById('completedCount').textContent = completed;
+        }
+
+        // Enhanced initialization with live participants
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLeaderboard();
+            loadLiveParticipants(); // Add participant tracking
+            startAutoRefresh();
+            
+            // Enhanced auto-refresh to include participants
+            const originalInterval = refreshInterval;
+            clearInterval(originalInterval);
+            
+            refreshInterval = setInterval(() => {
+                if (autoRefreshEnabled) {
+                    loadLeaderboard();
+                    loadLiveParticipants(); // Refresh participants too
+                    // Pulse the refresh indicator
+                    document.getElementById('refreshIndicator').classList.add('pulse');
+                    setTimeout(() => {
+                        document.getElementById('refreshIndicator').classList.remove('pulse');
+                    }, 1000);
+                }
+            }, 2000); // Update every 2 seconds
+        });
+
         // Handle page visibility for auto-refresh optimization
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible' && autoRefreshEnabled) {
                 loadLeaderboard();
+                loadLiveParticipants();
             }
         });
         

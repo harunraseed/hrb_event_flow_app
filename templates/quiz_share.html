@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block title %}Share Quiz - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-share-alt text-primary"></i> Share Quiz</h2>
+            <p class="text-muted">Share <strong>{{ quiz.title }}</strong> with participants</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+                <a href="{{ url_for('quiz_gamemaster', event_id=event.id) }}" class="btn btn-success">
+                    <i class="fas fa-tachometer-alt"></i> Live Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quiz Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert {% if quiz.is_active %}alert-success{% elif quiz.is_ended %}alert-danger{% else %}alert-warning{% endif %}">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h5 class="mb-0">
+                            {% if quiz.is_active %}
+                                <i class="fas fa-play-circle"></i> Quiz is Active
+                            {% elif quiz.is_ended %}
+                                <i class="fas fa-stop-circle"></i> Quiz has Ended
+                            {% else %}
+                                <i class="fas fa-pause-circle"></i> Quiz Not Started
+                            {% endif %}
+                        </h5>
+                        <p class="mb-0">
+                            {% if quiz.is_active %}
+                                Participants can join and start taking the quiz
+                            {% elif quiz.is_ended %}
+                                Quiz has ended, no new participants allowed
+                            {% else %}
+                                Start the quiz to allow participants to join
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        {% if not quiz.is_active and not quiz.is_ended %}
+                            <button class="btn btn-success" onclick="startQuiz()">
+                                <i class="fas fa-play"></i> Start Quiz
+                            </button>
+                        {% elif quiz.is_active %}
+                            <button class="btn btn-danger" onclick="endQuiz()">
+                                <i class="fas fa-stop"></i> End Quiz
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quiz Access Level -->
+    <div class="row mb-4">
+        <div class="col-12">
+            {% if quiz.allow_external_participants %}
+                <div class="alert alert-info">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h6 class="mb-0">
+                                <i class="fas fa-globe text-info"></i> Open Access Quiz
+                            </h6>
+                            <p class="mb-0 text-muted">Anyone can join this quiz, not just event participants</p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <span class="badge bg-info fs-6">
+                                <i class="fas fa-users"></i> Public Quiz
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-secondary">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h6 class="mb-0">
+                                <i class="fas fa-shield-alt text-secondary"></i> Event Participants Only
+                            </h6>
+                            <p class="mb-0 text-muted">Only registered event participants can join this quiz</p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <span class="badge bg-secondary fs-6">
+                                <i class="fas fa-lock"></i> Private Quiz
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if quiz.is_active %}
+    <!-- Sharing Options -->
+    <div class="row mb-4">
+        <!-- QR Code -->
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white text-center">
+                    <h5 class="mb-0"><i class="fas fa-qrcode"></i> QR Code</h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <img src="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
+                             alt="Quiz QR Code" 
+                             class="img-fluid border rounded"
+                             style="max-width: 250px; width: 100%;">
+                    </div>
+                    <p class="text-muted mb-3">Mobile users can scan this QR code to join instantly</p>
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
+                           class="btn btn-outline-primary" 
+                           download="quiz_qr_{{ event.name|replace(' ', '_') }}.png">
+                            <i class="fas fa-download"></i> Download QR Code
+                        </a>
+                        <button class="btn btn-outline-secondary" onclick="printQR()">
+                            <i class="fas fa-print"></i> Print QR Code
+                        </button>
+                        <button class="btn btn-outline-info" onclick="shareQR()">
+                            <i class="fas fa-share"></i> Share QR Code
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Link Sharing -->
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white text-center">
+                    <h5 class="mb-0"><i class="fas fa-link"></i> Direct Link</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">Share this link with participants:</p>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="quizLink" 
+                               value="{{ request.url_root }}event/{{ event.id }}/quiz/play" readonly>
+                        <button class="btn btn-outline-success" onclick="copyQuizLink()">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" onclick="shareLink()">
+                            <i class="fas fa-share"></i> Share Link
+                        </button>
+                        <button class="btn btn-outline-info" onclick="emailLink()">
+                            <i class="fas fa-envelope"></i> Email Link
+                        </button>
+                        <button class="btn btn-outline-success" onclick="openInNewTab()">
+                            <i class="fas fa-external-link-alt"></i> Open in New Tab
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Participant Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-users fa-2x text-primary mb-2"></i>
+                    <h4 class="{% if quiz.is_full %}text-danger{% else %}text-primary{% endif %}">
+                        {{ quiz.current_participants }}/{{ quiz.participant_limit }}
+                    </h4>
+                    <p class="text-muted mb-0">Participants</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-question-circle fa-2x text-info mb-2"></i>
+                    <h4 class="text-info">{{ stats.total_questions }}</h4>
+                    <p class="text-muted mb-0">Questions</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                    <h4 class="text-warning">{{ quiz.time_per_question }}s</h4>
+                    <p class="text-muted mb-0">Per Question</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions for Participants -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Instructions for Participants</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-mobile-alt text-primary"></i> For Mobile Users:</h6>
+                            <ul>
+                                <li>Open your camera app</li>
+                                <li>Point it at the QR code above</li>
+                                <li>Tap the notification to join</li>
+                                <li>Enter your name when prompted</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-desktop text-success"></i> For Desktop Users:</h6>
+                            <ul>
+                                <li>Click the "Copy" button above</li>
+                                <li>Share the link via email/chat</li>
+                                <li>Participants click the link</li>
+                                <li>Enter name to join the quiz</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="alert alert-light mt-3">
+                        <i class="fas fa-lightbulb text-warning"></i> 
+                        <strong>Tip:</strong> You can display this page on a projector or large screen so participants can easily see the QR code.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- Quiz Not Active -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-play-circle fa-4x text-muted mb-3"></i>
+                    <h4>Quiz Not Active</h4>
+                    <p class="text-muted mb-4">Start the quiz to enable participant sharing and generate QR codes.</p>
+                    {% if not quiz.is_ended %}
+                        <button class="btn btn-success btn-lg" onclick="startQuiz()">
+                            <i class="fas fa-play"></i> Start Quiz Now
+                        </button>
+                    {% else %}
+                        <p class="text-warning">This quiz has already ended.</p>
+                        <a href="{{ url_for('quiz_leaderboard', event_id=event.id) }}" class="btn btn-info">
+                            <i class="fas fa-trophy"></i> View Results
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function startQuiz() {
+    if (confirm('Are you sure you want to start the quiz? This will allow participants to join.')) {
+        fetch(`/event/{{ event.id }}/quiz/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Network error occurred');
+        });
+    }
+}
+
+function endQuiz() {
+    if (confirm('Are you sure you want to end the quiz? This will stop all participation.')) {
+        fetch(`/event/{{ event.id }}/quiz/end`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Network error occurred');
+        });
+    }
+}
+
+function copyQuizLink() {
+    const linkInput = document.getElementById('quizLink');
+    linkInput.select();
+    linkInput.setSelectionRange(0, 99999);
+    document.execCommand('copy');
+    
+    const copyBtn = event.target.closest('button');
+    const originalHTML = copyBtn.innerHTML;
+    copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    copyBtn.className = 'btn btn-success';
+    
+    setTimeout(() => {
+        copyBtn.innerHTML = originalHTML;
+        copyBtn.className = 'btn btn-outline-success';
+    }, 2000);
+}
+
+function printQR() {
+    const qrImg = document.querySelector('img[alt="Quiz QR Code"]');
+    const printWindow = window.open('', '', 'width=400,height=400');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Quiz QR Code - {{ event.name }}</title>
+            <style>
+                body { text-align: center; padding: 20px; font-family: Arial, sans-serif; }
+                img { max-width: 300px; border: 2px solid #000; }
+                h2 { margin-bottom: 10px; }
+                p { font-size: 14px; color: #333; margin: 10px 0; }
+                .url { font-family: monospace; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <h2>{{ event.name }}</h2>
+            <h3>Quiz QR Code</h3>
+            <img src="${qrImg.src}" alt="Quiz QR Code">
+            <p>Scan with your mobile device to join the quiz</p>
+            <p class="url">{{ request.url_root }}event/{{ event.id }}/quiz/play</p>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
+
+function shareQR() {
+    if (navigator.share) {
+        navigator.share({
+            title: 'Join Quiz: {{ quiz.title }}',
+            text: 'Scan the QR code or use the link to join our quiz!',
+            url: '{{ request.url_root }}event/{{ event.id }}/quiz/play'
+        });
+    } else {
+        copyQuizLink();
+    }
+}
+
+function shareLink() {
+    if (navigator.share) {
+        navigator.share({
+            title: 'Join Quiz: {{ quiz.title }}',
+            text: 'Join our interactive quiz!',
+            url: '{{ request.url_root }}event/{{ event.id }}/quiz/play'
+        });
+    } else {
+        copyQuizLink();
+    }
+}
+
+function emailLink() {
+    const subject = encodeURIComponent('Join Quiz: {{ quiz.title }}');
+    const body = encodeURIComponent(`Hi!\n\nYou're invited to join our interactive quiz: {{ quiz.title }}\n\nClick here to join: {{ request.url_root }}event/{{ event.id }}/quiz/play\n\nSee you there!`);
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+}
+
+function openInNewTab() {
+    window.open('{{ request.url_root }}event/{{ event.id }}/quiz/play', '_blank');
+}
+</script>
+{% endblock %}

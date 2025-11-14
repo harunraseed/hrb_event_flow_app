@@ -118,15 +118,27 @@
                             </div>
                         </div>
 
-                        <!-- Feedback Settings -->
-                        <h6 class="text-primary mb-3"><i class="fas fa-comment-dots"></i> Feedback Settings</h6>
+                        <!-- External Access Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-users"></i> External Access Settings</h6>
+                        <div class="mb-4">
+                            <div class="form-check">
+                                {{ form.allow_external_participants(class="form-check-input") }}
+                                <label class="form-check-label" for="allow_external_participants">
+                                    Allow External Participants (Non-Event Members)
+                                </label>
+                                <small class="form-text text-muted d-block">Enable this to allow anyone to join the quiz, not just event participants</small>
+                            </div>
+                        </div>
+
+                        <!-- Event Feedback Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-comment-dots"></i> Event Feedback Settings</h6>
                         <div class="mb-4">
                             <div class="form-check">
                                 {{ form.collect_feedback(class="form-check-input") }}
                                 <label class="form-check-label" for="collect_feedback">
-                                    Collect Participant Feedback
+                                    Collect Event Feedback from Participants
                                 </label>
-                                <small class="form-text text-muted d-block">Ask participants for feedback after quiz completion</small>
+                                <small class="form-text text-muted d-block">Ask participants for feedback about the entire event after quiz completion</small>
                             </div>
                         </div>
 
@@ -159,7 +171,12 @@
                         <p><strong>Leaderboard:</strong> 
                             <span id="preview-leaderboard">{{ "Enabled" if form.show_leaderboard.data else "Disabled" }}</span>
                         </p>
-                        <p><strong>Feedback Collection:</strong> 
+                        <p><strong>External Access:</strong> 
+                            <span id="preview-external" class="{{ 'text-warning' if form.allow_external_participants.data else '' }}">
+                                {{ "Open to All" if form.allow_external_participants.data else "Event Participants Only" }}
+                            </span>
+                        </p>
+                        <p><strong>Event Feedback Collection:</strong> 
                             <span id="preview-feedback">{{ "Enabled" if form.collect_feedback.data else "Disabled" }}</span>
                         </p>
                         <p><strong>Status:</strong> 

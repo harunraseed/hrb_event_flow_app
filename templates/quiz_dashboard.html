@@ -19,6 +19,9 @@
                 <a href="{{ url_for('quiz_leaderboard', event_id=event.id) }}" class="btn btn-info">
                     <i class="fas fa-trophy"></i> Leaderboard
                 </a>
+                <a href="{{ url_for('quiz_share', event_id=event.id) }}" class="btn btn-warning">
+                    <i class="fas fa-share-alt"></i> Share Quiz
+                </a>
                 <a href="{{ url_for('quiz_gamemaster', event_id=event.id) }}" class="btn btn-success">
                     <i class="fas fa-tachometer-alt"></i> Live Dashboard
                 </a>
@@ -126,46 +129,24 @@
         </div>
     </div>
 
-    <!-- Quiz Sharing -->
-    {% if quiz.is_active %}
+    <!-- Quiz Sharing Security Notice -->
     <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="alert alert-success">
-                <h5><i class="fas fa-share-alt"></i> Share Quiz Link</h5>
-                <p class="mb-2">Participants can join the quiz using this link:</p>
-                <div class="input-group">
-                    <input type="text" class="form-control" id="quizLink" 
-                           value="{{ request.url_root }}event/{{ event.id }}/quiz/play" readonly>
-                    <button class="btn btn-outline-secondary" onclick="copyQuizLink()">
-                        <i class="fas fa-copy"></i> Copy
-                    </button>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
+        <div class="col-12">
             <div class="alert alert-info">
-                <h5><i class="fas fa-qrcode"></i> Mobile QR Code</h5>
-                <p class="mb-2">Mobile users can scan this QR code to join:</p>
-                <div class="text-center mb-2">
-                    <img src="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
-                         alt="Quiz QR Code" 
-                         class="img-fluid" 
-                         style="max-width: 150px;">
-                </div>
-                <div class="btn-group w-100">
-                    <a href="{{ url_for('generate_quiz_qr', event_id=event.id) }}" 
-                       class="btn btn-outline-info btn-sm" 
-                       download="quiz_qr_{{ event.name|replace(' ', '_') }}.png">
-                        <i class="fas fa-download"></i> Download QR
-                    </a>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="printQR()">
-                        <i class="fas fa-print"></i> Print QR
-                    </button>
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h5 class="mb-1"><i class="fas fa-shield-alt text-primary"></i> Secure Quiz Sharing</h5>
+                        <p class="mb-0">QR codes and sharing links have been moved to a separate page to prevent participants from seeing questions.</p>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <a href="{{ url_for('quiz_share', event_id=event.id) }}" class="btn btn-primary">
+                            <i class="fas fa-share-alt"></i> Share Quiz Safely
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    {% endif %}
 
     <!-- Questions Management -->
     <div class="row">
@@ -174,6 +155,9 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-question-circle"></i> Questions ({{ stats.total_questions }})</h5>
                     <div class="btn-group">
+                        <button id="toggleQuestions" class="btn btn-warning btn-sm" onclick="toggleQuestionVisibility()">
+                            <i class="fas fa-eye-slash"></i> <span id="toggleText">Show Questions</span>
+                        </button>
                         <a href="{{ url_for('add_quiz_question', event_id=event.id) }}" class="btn btn-success btn-sm">
                             <i class="fas fa-plus"></i> Add Question
                         </a>
@@ -183,39 +167,47 @@
                     </div>
                 </div>
                 <div class="card-body">
+                    <div class="alert alert-warning" id="securityNotice">
+                        <i class="fas fa-shield-alt"></i> <strong>Security Notice:</strong> Questions are hidden by default to prevent participants from seeing them when you share your screen or show the QR code. Click "Show Questions" to preview.
+                    </div>
                     {% if questions %}
-                        <div class="table-responsive">
+                        <div class="table-responsive" id="questionsTable" style="display: none;">
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
                                         <th width="5%">#</th>
-                                        <th width="60%">Question</th>
-                                        <th width="15%">Correct Answer</th>
-                                        <th width="10%">Points</th>
-                                        <th width="10%">Actions</th>
+                                        <th width="50%">Question</th>
+                                        <th width="20%">Options</th>
+                                        <th width="10%">Correct Answer</th>
+                                        <th width="8%">Points</th>
+                                        <th width="7%">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for question in questions %}
                                     <tr>
-                                        <td>{{ question.question_order }}</td>
+                                        <td><span class="badge bg-primary">{{ question.question_order }}</span></td>
                                         <td>
-                                            <div class="question-preview">
-                                                {{ question.question_text[:100] }}
-                                                {% if question.question_text|length > 100 %}...{% endif %}
+                                            <div class="question-preview fw-bold">
+                                                {{ question.question_text }}
                                             </div>
+                                        </td>
+                                        <td>
                                             <small class="text-muted">
-                                                A: {{ question.option_a[:30] }}...
-                                                B: {{ question.option_b[:30] }}...
+                                                <div><strong>A:</strong> {{ question.option_a }}</div>
+                                                <div><strong>B:</strong> {{ question.option_b }}</div>
+                                                <div><strong>C:</strong> {{ question.option_c }}</div>
+                                                <div><strong>D:</strong> {{ question.option_d }}</div>
                                             </small>
                                         </td>
                                         <td>
-                                            <span class="badge bg-success">{{ question.correct_answer }}</span>
+                                            <span class="badge bg-success fs-6">{{ question.correct_answer }}</span>
                                         </td>
-                                        <td>{{ question.points }}</td>
+                                        <td><span class="badge bg-info">{{ question.points }}</span></td>
                                         <td>
                                             <button class="btn btn-danger btn-sm" 
-                                                    onclick="deleteQuestion({{ question.id }})">
+                                                    onclick="deleteQuestion({{ question.id }})"
+                                                    title="Delete Question">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </td>
@@ -223,6 +215,11 @@
                                     {% endfor %}
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="text-center py-4" id="questionsHidden">
+                            <i class="fas fa-eye-slash fa-3x text-muted mb-3"></i>
+                            <h5>{{ stats.total_questions }} Questions Hidden</h5>
+                            <p class="text-muted">Click "Show Questions" above to preview questions and answers safely.</p>
                         </div>
                     {% else %}
                         <div class="text-center py-5">
@@ -480,6 +477,75 @@ function printQR() {
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
+}
+
+function toggleQuestionVisibility() {
+    const table = document.getElementById('questionsTable');
+    const hiddenDiv = document.getElementById('questionsHidden');
+    const toggleBtn = document.getElementById('toggleQuestions');
+    const toggleText = document.getElementById('toggleText');
+    const securityNotice = document.getElementById('securityNotice');
+    
+    if (table.style.display === 'none') {
+        // Show questions
+        table.style.display = 'block';
+        if (hiddenDiv) hiddenDiv.style.display = 'none';
+        securityNotice.className = 'alert alert-danger';
+        securityNotice.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <strong>Questions Visible:</strong> Questions and answers are now visible. Be careful when sharing your screen or showing to participants.';
+        toggleBtn.className = 'btn btn-danger btn-sm';
+        toggleBtn.innerHTML = '<i class="fas fa-eye"></i> <span id="toggleText">Hide Questions</span>';
+    } else {
+        // Hide questions
+        table.style.display = 'none';
+        if (hiddenDiv) hiddenDiv.style.display = 'block';
+        securityNotice.className = 'alert alert-warning';
+        securityNotice.innerHTML = '<i class="fas fa-shield-alt"></i> <strong>Security Notice:</strong> Questions are hidden by default to prevent participants from seeing them when you share your screen or show the QR code. Click "Show Questions" to preview.';
+        toggleBtn.className = 'btn btn-warning btn-sm';
+        toggleBtn.innerHTML = '<i class="fas fa-eye-slash"></i> <span id="toggleText">Show Questions</span>';
+    }
+}
+
+function copyQuizLink() {
+    const linkInput = document.getElementById('quizLink');
+    linkInput.select();
+    linkInput.setSelectionRange(0, 99999); // For mobile devices
+    document.execCommand('copy');
+    
+    // Show success feedback
+    const copyBtn = event.target.closest('button');
+    const originalHTML = copyBtn.innerHTML;
+    copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    copyBtn.className = 'btn btn-success';
+    
+    setTimeout(() => {
+        copyBtn.innerHTML = originalHTML;
+        copyBtn.className = 'btn btn-outline-secondary';
+    }, 2000);
+}
+
+function deleteQuestion(questionId) {
+    if (confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        fetch(`/event/{{ event.id }}/quiz/question/${questionId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Network error occurred');
+        });
+    }
 }
 </script>
 {% endblock %}

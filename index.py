@@ -89,6 +89,36 @@ quiz_performance = QuizPerformanceManager()
 quiz_performance.init_app(app)
 app.extensions['quiz_performance'] = quiz_performance
 
+# Custom Jinja2 filters for timing display
+@app.template_filter('microsecond_time')
+def microsecond_time_filter(seconds):
+    """Format time in seconds to show microsecond precision for fastest finger detection"""
+    if seconds is None:
+        return "N/A"
+    
+    # Convert to milliseconds for better readability in fastest finger games
+    milliseconds = seconds * 1000
+    
+    if milliseconds < 1000:  # Less than 1 second
+        return f"{milliseconds:.3f}ms"
+    else:  # 1 second or more
+        return f"{seconds:.6f}s"
+
+@app.template_filter('rank_time')
+def rank_time_filter(seconds):
+    """Format time for ranking display with appropriate precision"""
+    if seconds is None:
+        return "N/A"
+    
+    milliseconds = seconds * 1000
+    
+    if milliseconds < 100:  # Very fast - show microseconds
+        return f"{milliseconds:.3f}ms"
+    elif milliseconds < 1000:  # Fast - show milliseconds
+        return f"{milliseconds:.1f}ms" 
+    else:  # Slower - show seconds with 3 decimal places
+        return f"{seconds:.3f}s"
+
 # Initialize quiz stats collector
 quiz_stats = QuizStatsCollector(quiz_performance.redis_client)
 
@@ -294,7 +324,8 @@ class QuizConfigForm(FlaskForm):
     participant_limit = IntegerField('Maximum Participants', validators=[DataRequired(), NumberRange(min=1, max=1000)], default=100)
     is_active = BooleanField('Quiz is Active', default=False)
     show_leaderboard = BooleanField('Show Leaderboard', default=True)
-    collect_feedback = BooleanField('Collect Participant Feedback', default=False)
+    collect_feedback = BooleanField('Collect Event Feedback from Participants', default=False)
+    allow_external_participants = BooleanField('Allow External Participants (Non-Event Members)', default=False)
     submit = SubmitField('Save Quiz Configuration')
 
 class QuizQuestionForm(FlaskForm):
@@ -531,6 +562,9 @@ class Quiz(db.Model):
     
     # Feedback collection
     collect_feedback = db.Column(db.Boolean, default=False)  # Whether to show feedback form after quiz
+    
+    # External participants
+    allow_external_participants = db.Column(db.Boolean, default=False)  # Allow non-event participants to join
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -1057,6 +1091,82 @@ def migrate_reset_tokens():
                 'message': 'Password reset token migration completed successfully!',
                 'results': results,
                 'columns_added': len(results)
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Migration failed: {str(e)}',
+            'error_type': type(e).__name__
+        }), 500
+
+@app.route('/admin/migrate/quiz-feedback')
+def migrate_quiz_feedback():
+    """Run quiz feedback column migration in production"""
+    try:
+        # Perform migration directly
+        with db.engine.connect() as connection:
+            # Check if column exists first
+            result = connection.execute(db.text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'quizzes' 
+                AND column_name = 'collect_feedback'
+            """))
+            
+            if result.fetchone():
+                return jsonify({
+                    'status': 'success',
+                    'message': 'collect_feedback column already exists. Migration not needed.',
+                    'column_exists': True
+                })
+            
+            # Add the column
+            connection.execute(db.text('ALTER TABLE quizzes ADD COLUMN collect_feedback BOOLEAN DEFAULT FALSE'))
+            connection.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Quiz feedback column migration completed successfully!',
+                'column_added': True
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Migration failed: {str(e)}',
+            'error_type': type(e).__name__
+        }), 500
+
+@app.route('/admin/migrate/external-participants')
+@require_superadmin
+def migrate_external_participants():
+    """Database migration to add allow_external_participants column to quizzes table"""
+    try:
+        with db.engine.connect() as connection:
+            # Check if column already exists (PostgreSQL syntax)
+            result = connection.execute(db.text("""
+                SELECT COUNT(*) 
+                FROM information_schema.columns 
+                WHERE table_name = 'quizzes' 
+                    AND column_name = 'allow_external_participants'
+            """))
+            
+            if result.fetchone()[0] > 0:
+                return jsonify({
+                    'status': 'success',
+                    'message': 'allow_external_participants column already exists. Migration not needed.',
+                    'column_exists': True
+                })
+            
+            # Add the column
+            connection.execute(db.text('ALTER TABLE quizzes ADD COLUMN allow_external_participants BOOLEAN DEFAULT FALSE'))
+            connection.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'External participants column migration completed successfully!',
+                'column_added': True
             })
             
     except Exception as e:
@@ -3266,6 +3376,26 @@ def quiz_dashboard(event_id):
     
     return render_template('quiz_dashboard.html', event=event, quiz=quiz, questions=questions, attempts=attempts, stats=stats)
 
+@app.route('/event/<int:event_id>/quiz/share')
+@require_admin  
+def quiz_share(event_id):
+    """Secure quiz sharing page with QR codes"""
+    event = Event.query.get_or_404(event_id)
+    quiz = Quiz.query.filter_by(event_id=event_id).first()
+    
+    if not quiz:
+        flash('No quiz found for this event.', 'error')
+        return redirect(url_for('quiz_dashboard', event_id=event_id))
+    
+    questions = QuizQuestion.query.filter_by(quiz_id=quiz.id).order_by(QuizQuestion.question_order).all()
+    
+    # Get statistics
+    stats = {
+        'total_questions': len(questions)
+    }
+    
+    return render_template('quiz_share.html', event=event, quiz=quiz, stats=stats)
+
 @app.route('/event/<int:event_id>/quiz/config', methods=['GET', 'POST'])
 @require_admin
 def quiz_config(event_id):
@@ -3471,7 +3601,7 @@ def delete_quiz(event_id):
 @app.route('/event/<int:event_id>/quiz/reset', methods=['POST'])
 @require_admin
 def reset_quiz(event_id):
-    """Reset quiz data (delete all attempts and answers, keep questions)"""
+    """Comprehensive quiz reset - clears all participant data while preserving questions"""
     try:
         event = Event.query.get_or_404(event_id)
         quiz = Quiz.query.filter_by(event_id=event_id).first()
@@ -3479,28 +3609,39 @@ def reset_quiz(event_id):
         if not quiz:
             return jsonify({'success': False, 'error': 'Quiz not found'}), 404
         
-        # Count attempts before deletion for feedback
+        # Count data before deletion for feedback
         attempts = QuizAttempt.query.filter_by(quiz_id=quiz.id).all()
         attempt_count = len(attempts)
         
-        # Delete quiz answers and attempts, but keep questions and quiz configuration
+        # Count answers to be deleted
+        total_answers = 0
+        for attempt in attempts:
+            answers = QuizAnswer.query.filter_by(attempt_id=attempt.id).all()
+            total_answers += len(answers)
+        
+        # Delete all quiz answers first (due to foreign key constraints)
         for attempt in attempts:
             QuizAnswer.query.filter_by(attempt_id=attempt.id).delete()
-            db.session.delete(attempt)
         
-        # Reset quiz state
+        # Delete all quiz attempts
+        QuizAttempt.query.filter_by(quiz_id=quiz.id).delete()
+        
+        # Comprehensive quiz state reset
         quiz.is_active = False
+        quiz.is_ended = False  # Reset ended state too
         quiz.quiz_start_time = None
         quiz.quiz_end_time = None
         quiz.updated_at = datetime.now(timezone.utc)
         
+        # Commit all changes
         db.session.commit()
         
-        flash(f'Quiz reset successfully! Removed {attempt_count} participant attempts.', 'success')
+        flash(f'Quiz completely reset! Removed {attempt_count} attempts and {total_answers} answers.', 'success')
         return jsonify({
             'success': True, 
-            'message': f'Quiz reset successfully! Removed {attempt_count} participant attempts.',
-            'attempts_removed': attempt_count
+            'message': f'Quiz completely reset! Removed {attempt_count} participant attempts and {total_answers} answers. Quiz is ready for fresh sessions.',
+            'attempts_removed': attempt_count,
+            'answers_removed': total_answers
         })
         
     except Exception as e:
@@ -3618,24 +3759,36 @@ def join_quiz(event_id):
         # Record participation for stats
         quiz_stats.record_participation(quiz.id, 'join')
         
-        # Optimized participant lookup/creation
-        participant = Participant.query.filter_by(
-            email=participant_email, 
-            event_id=event_id
-        ).with_for_update().first()  # Lock for update to prevent race conditions
-        
-        if not participant:
-            if not participant_name:
-                return jsonify({'success': False, 'error': 'Name is required for new participants'}), 400
+        # Check if external participants are allowed for this quiz
+        if quiz.allow_external_participants:
+            # For external participant access, look for participant across all events or create new
+            participant = Participant.query.filter_by(email=participant_email).first()
             
-            participant = Participant(
-                name=participant_name,
-                email=participant_email,
-                event_id=event_id,
-                checked_in=True  # Auto check-in quiz participants
-            )
-            db.session.add(participant)
-            db.session.flush()
+            if not participant:
+                if not participant_name:
+                    return jsonify({'success': False, 'error': 'Name is required for new participants'}), 400
+                
+                # Create external participant linked to this event
+                participant = Participant(
+                    name=participant_name,
+                    email=participant_email,
+                    event_id=event_id,
+                    checked_in=True  # Auto check-in quiz participants
+                )
+                db.session.add(participant)
+                db.session.flush()
+        else:
+            # Standard logic: Only event participants can join
+            participant = Participant.query.filter_by(
+                email=participant_email, 
+                event_id=event_id
+            ).with_for_update().first()  # Lock for update to prevent race conditions
+            
+            if not participant:
+                return jsonify({
+                    'success': False, 
+                    'error': 'You must be registered for this event to participate in the quiz. Please contact the event organizer.'
+                }), 403
         
         # Check for existing attempt with optimized query
         existing_attempt = QuizAttempt.query.filter_by(
@@ -3813,7 +3966,7 @@ def submit_quiz_answer(attempt_id):
 
 @app.route('/event/<int:event_id>/quiz/leaderboard')
 def quiz_leaderboard(event_id):
-    """Show quiz leaderboard"""
+    """Show quiz leaderboard with mandatory feedback support"""
     event = Event.query.get_or_404(event_id)
     quiz = Quiz.query.filter_by(event_id=event_id).first()
     
@@ -3823,6 +3976,8 @@ def quiz_leaderboard(event_id):
     
     # Check if this is a participant view (from quiz completion) or admin view
     is_participant = request.args.get('participant') == 'true'
+    attempt_id = request.args.get('attempt_id')
+    mandatory_feedback = request.args.get('mandatory_feedback') == 'true'
     
     leaderboard = quiz.leaderboard_data
     
@@ -3830,7 +3985,9 @@ def quiz_leaderboard(event_id):
                          event=event, 
                          quiz=quiz, 
                          leaderboard=leaderboard,
-                         is_participant=is_participant)
+                         is_participant=is_participant,
+                         attempt_id=attempt_id,
+                         mandatory_feedback=mandatory_feedback)
 
 @app.route('/event/<int:event_id>/quiz/gamemaster')
 @require_admin
@@ -3892,6 +4049,51 @@ def quiz_live_leaderboard_api(quiz_id):
                 'participant_limit': quiz.participant_limit
             },
             'leaderboard': leaderboard_data,
+            'last_updated': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/quiz/<int:quiz_id>/live-participants')
+def quiz_live_participants_api(quiz_id):
+    """API endpoint for live participants tracking (Gamemaster view)"""
+    try:
+        quiz = Quiz.query.get_or_404(quiz_id)
+        
+        # Get all attempts for this quiz with participant details
+        attempts = QuizAttempt.query.filter_by(quiz_id=quiz_id)\
+            .join(Participant)\
+            .order_by(QuizAttempt.started_at.asc())\
+            .all()
+        
+        participants_data = []
+        for attempt in attempts:
+            participant = attempt.participant
+            
+            participants_data.append({
+                'id': participant.id,
+                'name': participant.name,
+                'email': participant.email,
+                'is_active': not attempt.is_completed and attempt.started_at is not None,
+                'is_completed': attempt.is_completed,
+                'current_question': attempt.current_question,
+                'score': attempt.score if attempt.is_completed else 0,
+                'progress': (attempt.current_question - 1) / max(quiz.total_questions, 1) * 100,
+                'joined_at': attempt.started_at.strftime('%H:%M:%S') if attempt.started_at else 'Waiting',
+                'total_time_taken': round(attempt.total_time_taken, 2) if attempt.total_time_taken else 0
+            })
+        
+        return jsonify({
+            'success': True,
+            'quiz_id': quiz_id,
+            'participants': participants_data,
+            'total_count': len(participants_data),
+            'quiz_status': {
+                'is_active': quiz.is_active,
+                'is_ended': quiz.is_ended,
+                'participant_limit': quiz.participant_limit
+            },
             'last_updated': datetime.now(timezone.utc).isoformat()
         })
         

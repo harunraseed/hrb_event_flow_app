@@ -1,24 +1,8 @@
-{% if not is_participant %}
 {% extends "base.html" %}
 
 {% block title %}Quiz Leaderboard - {{ quiz.title }}{% endblock %}
 
 {% block content %}
-{% else %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Leaderboard - {{ quiz.title }}</title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-</head>
-<body style="margin: 0; padding: 0;">
-{% endif %}
 <style>
     body {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -342,7 +326,7 @@
                     <div class="stat-card">
                         <div class="stat-value">
                             {% if leaderboard %}
-                                {{ leaderboard[0].total_time_taken }}s
+                                {{ leaderboard[0].total_time_taken|rank_time }}
                             {% else %}
                                 0s
                             {% endif %}
@@ -363,7 +347,7 @@
                             <div class="place-number">2</div>
                             <div class="participant-name">{{ leaderboard[1].participant.name }}</div>
                             <div class="participant-score">{{ leaderboard[1].score }} pts</div>
-                            <div class="participant-time">{{ leaderboard[1].total_time_taken }}s</div>
+                            <div class="participant-time">{{ leaderboard[1].total_time_taken|rank_time }}</div>
                         </div>
                     {% endif %}
                     
@@ -373,7 +357,7 @@
                         <div class="place-number">1</div>
                         <div class="participant-name">{{ leaderboard[0].participant.name }}</div>
                         <div class="participant-score">{{ leaderboard[0].score }} pts</div>
-                        <div class="participant-time">{{ leaderboard[0].total_time_taken }}s</div>
+                        <div class="participant-time">{{ leaderboard[0].total_time_taken|rank_time }}</div>
                     </div>
                     
                     <!-- 3rd Place -->
@@ -382,7 +366,7 @@
                             <div class="place-number">3</div>
                             <div class="participant-name">{{ leaderboard[2].participant.name }}</div>
                             <div class="participant-score">{{ leaderboard[2].score }} pts</div>
-                            <div class="participant-time">{{ leaderboard[2].total_time_taken }}s</div>
+                            <div class="participant-time">{{ leaderboard[2].total_time_taken|rank_time }}</div>
                         </div>
                     {% endif %}
                 </div>
@@ -408,7 +392,7 @@
                             <div class="rank-score">{{ attempt.score }} pts</div>
                             <div class="rank-time">
                                 {% set correct_count = attempt.quiz_answers|selectattr('is_correct')|list|length %}
-                                {{ correct_count }}/{{ quiz.total_questions }} correct • {{ attempt.total_time_taken }}s
+                                {{ correct_count }}/{{ quiz.total_questions }} correct • {{ attempt.total_time_taken|microsecond_time }}
                             </div>
                         </div>
                     </div>
@@ -440,12 +424,27 @@
                     <h5 class="mb-3 text-muted">
                         <i class="fas fa-trophy text-warning"></i> Congratulations on completing the quiz!
                     </h5>
-                    <button onclick="shareResults()" class="btn btn-success btn-lg me-3">
-                        <i class="fas fa-share-alt"></i> Share Results
-                    </button>
-                    <button onclick="window.print()" class="btn btn-outline-info btn-lg">
-                        <i class="fas fa-print"></i> Print Certificate
-                    </button>
+                    
+                    {% if mandatory_feedback and attempt_id %}
+                        <!-- Mandatory feedback flow -->
+                        <button onclick="goToFeedback()" class="btn btn-warning btn-lg me-3">
+                            <i class="fas fa-comment-dots"></i> Skip to Event Feedback
+                        </button>
+                        <button onclick="shareResults()" class="btn btn-outline-success btn-lg me-2">
+                            <i class="fas fa-share-alt"></i> Share Results
+                        </button>
+                        <button onclick="window.print()" class="btn btn-outline-info btn-lg">
+                            <i class="fas fa-print"></i> Print Certificate
+                        </button>
+                    {% else %}
+                        <!-- Normal participant buttons -->
+                        <button onclick="shareResults()" class="btn btn-success btn-lg me-3">
+                            <i class="fas fa-share-alt"></i> Share Results
+                        </button>
+                        <button onclick="window.print()" class="btn btn-outline-info btn-lg">
+                            <i class="fas fa-print"></i> Print Certificate
+                        </button>
+                    {% endif %}
                 </div>
             {% endif %}
         </div>
@@ -503,13 +502,63 @@
             });
         }
     }
+
+    // Mandatory feedback flow for participants
+    {% if is_participant and mandatory_feedback and attempt_id %}
+    let feedbackCountdown = 10;
+    let countdownTimer;
+
+    function startFeedbackCountdown() {
+        // Add feedback notice to the page
+        const feedbackNotice = document.createElement('div');
+        feedbackNotice.id = 'feedbackNotice';
+        feedbackNotice.className = 'alert alert-warning position-fixed';
+        feedbackNotice.style.cssText = `
+            top: 20px; 
+            right: 20px; 
+            z-index: 1050; 
+            min-width: 300px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        feedbackNotice.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="fas fa-comment-dots fa-lg me-3 text-warning"></i>
+                <div>
+                    <strong>Event Feedback Required</strong><br>
+                    <small>Redirecting to feedback form in <span id="countdown">${feedbackCountdown}</span> seconds...</small>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(feedbackNotice);
+
+        // Start countdown
+        countdownTimer = setInterval(() => {
+            feedbackCountdown--;
+            const countdownElement = document.getElementById('countdown');
+            if (countdownElement) {
+                countdownElement.textContent = feedbackCountdown;
+            }
+            
+            if (feedbackCountdown <= 0) {
+                clearInterval(countdownTimer);
+                // Redirect to feedback form
+                window.location.href = `/event/{{ event.id }}/feedback/{{ attempt_id }}`;
+            }
+        }, 1000);
+    }
+
+    // Start countdown when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait 2 seconds before starting countdown to let user see leaderboard
+        setTimeout(startFeedbackCountdown, 2000);
+    });
+
+    // Allow users to skip countdown and go directly to feedback
+    function goToFeedback() {
+        if (countdownTimer) clearInterval(countdownTimer);
+        window.location.href = `/event/{{ event.id }}/feedback/{{ attempt_id }}`;
+    }
+    {% endif %}
 </script>
 
-{% if not is_participant %}
 {% endblock %}
-{% else %}
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
-{% endif %}

@@ -620,17 +620,29 @@
                 
                 document.getElementById('scoreMessage').textContent = message;
                 
-                // Check if feedback collection is enabled and redirect after a delay
+                // Check if feedback collection is enabled - redirect to leaderboard first, then mandatory feedback
                 if (completionData && completionData.collect_feedback) {
                     setTimeout(() => {
-                        window.location.href = `/event/{{ event.id }}/feedback/${this.attemptId}`;
+                        window.location.href = `/event/{{ event.id }}/quiz/leaderboard?participant=true&attempt_id=${this.attemptId}&mandatory_feedback=true`;
                     }, 3000); // Wait 3 seconds to show results first
                     
-                    // Add feedback notice
+                    // Add leaderboard and feedback notice
                     const feedbackNotice = document.createElement('div');
                     feedbackNotice.className = 'alert alert-info mt-3';
-                    feedbackNotice.innerHTML = '<i class="fas fa-comment-dots me-2"></i>Redirecting to feedback form in 3 seconds...';
+                    feedbackNotice.innerHTML = '<i class="fas fa-trophy me-2"></i>Showing leaderboard, then event feedback form...';
                     document.getElementById('resultsScreen').appendChild(feedbackNotice);
+                } else {
+                    // If no feedback required, just show option to view leaderboard
+                    setTimeout(() => {
+                        const leaderboardBtn = document.createElement('div');
+                        leaderboardBtn.className = 'text-center mt-3';
+                        leaderboardBtn.innerHTML = `
+                            <a href="/event/{{ event.id }}/quiz/leaderboard?participant=true" class="btn btn-primary btn-lg">
+                                <i class="fas fa-trophy"></i> View Leaderboard
+                            </a>
+                        `;
+                        document.getElementById('resultsScreen').appendChild(leaderboardBtn);
+                    }, 2000);
                 }
             }
             
