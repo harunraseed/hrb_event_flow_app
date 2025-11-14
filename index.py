@@ -44,14 +44,38 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-pro
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
-# Database configuration
+# Database configuration with connection pooling for high concurrency
 if os.getenv('DATABASE_URL'):
     # Use PostgreSQL in production (including Vercel)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-    print("Using PostgreSQL database")
+    database_url = os.getenv('DATABASE_URL')
+    
+    # Fix Heroku/Vercel postgres URL if needed
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    
+    # Production connection pool settings for high concurrency
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 10,        # Base connections
+        'max_overflow': 20,     # Additional connections under load
+        'pool_timeout': 30,     # Timeout for getting connection
+        'pool_recycle': 300,    # Recycle connections every 5 minutes
+        'pool_pre_ping': True,  # Verify connections before use
+        'connect_args': {
+            'connect_timeout': 10,
+            'application_name': 'event_ticketing_quiz',
+            'options': '-c statement_timeout=30000'  # 30s query timeout
+        }
+    }
+    print("Using PostgreSQL database with connection pooling")
 else:
     # Use SQLite for local development
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_timeout': 20,
+        'pool_recycle': -1,
+    }
     print("Using SQLite database for local development")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -3745,7 +3769,7 @@ def play_quiz(event_id):
     return render_template('play_quiz.html', event=event, quiz=quiz)
 
 @app.route('/event/<int:event_id>/quiz/join', methods=['POST'])
-@rate_limit_quiz_joins(max_joins_per_minute=50)  # Allow up to 50 joins per minute per IP
+@rate_limit_quiz_joins(max_joins_per_minute=10)  # Reduced rate limit for stability
 def join_quiz(event_id):
     """Join quiz as a participant - Optimized for high concurrency"""
     try:
@@ -3905,6 +3929,7 @@ def join_quiz(event_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/quiz/attempt/<int:attempt_id>/question')
+@rate_limit_quiz_joins(max_joins_per_minute=60)  # Higher limit for question fetching
 def get_quiz_question(attempt_id):
     """Get current question for quiz attempt"""
     try:
@@ -3963,6 +3988,7 @@ def get_quiz_question(attempt_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/quiz/attempt/<int:attempt_id>/answer', methods=['POST'])
+@rate_limit_quiz_joins(max_joins_per_minute=30)  # Rate limit answer submissions
 def submit_quiz_answer(attempt_id):
     """Submit answer for quiz question - Optimized with anti-double-submission"""
     try:

@@ -89,8 +89,15 @@
         }
         
         .option-button.selected {
-            border-color: #28a745;
-            background: #d4edda;
+            border-color: #28a745 !important;
+            background: #d4edda !important;
+            pointer-events: none !important;
+        }
+        
+        .option-button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed !important;
+            pointer-events: none !important;
         }
         
         .option-button.correct {
@@ -415,6 +422,16 @@
                 this.totalStartTime = Date.now();
                 this.questionStartTime = Date.now();
                 
+                // Anti-race condition locks
+                this.isJoining = false;
+                this.isSubmitting = false;
+                this.answerSelected = false;
+                this.isLoadingQuestion = false;
+                this.pollInterval = null;
+                
+                // Debouncing timers
+                this.debounceTimers = new Map();
+                
                 this.setupEventListeners();
             }
             
@@ -425,12 +442,36 @@
                 });
             }
             
+            // Debounce helper to prevent rapid clicks
+            debounce(func, delay, key) {
+                if (this.debounceTimers.has(key)) {
+                    clearTimeout(this.debounceTimers.get(key));
+                }
+                
+                return new Promise((resolve) => {
+                    const timer = setTimeout(() => {
+                        this.debounceTimers.delete(key);
+                        resolve(func());
+                    }, delay);
+                    this.debounceTimers.set(key, timer);
+                });
+            }
+            
             async joinQuiz() {
+                // Prevent multiple simultaneous join attempts
+                if (this.isJoining) {
+                    console.log('Already joining quiz, ignoring request');
+                    return;
+                }
+                
+                this.isJoining = true;
+                
                 const name = document.getElementById('participantName').value.trim();
                 const email = document.getElementById('participantEmail').value.trim();
                 
                 if (!name || !email) {
                     alert('Please fill in all fields');
+                    this.isJoining = false;
                     return;
                 }
                 
@@ -467,10 +508,17 @@
                         }
                     } else {
                         alert(data.error || 'Failed to join quiz');
+                        this.isJoining = false; // Reset flag on error
                     }
                 } catch (error) {
                     console.error('Error joining quiz:', error);
                     alert('Network error. Please try again.');
+                    this.isJoining = false; // Reset flag on error
+                } finally {
+                    // Always reset the flag after attempt
+                    setTimeout(() => {
+                        this.isJoining = false;
+                    }, 1000);
                 }
             }
             
@@ -502,8 +550,8 @@
                     }
                 };
                 
-                // Check every 2 seconds
-                this.pollInterval = setInterval(checkQuizStatus, 2000);
+                // Check every 5 seconds to reduce server load
+                this.pollInterval = setInterval(checkQuizStatus, 5000);
                 
                 // Initial check
                 checkQuizStatus();
@@ -551,6 +599,10 @@
             }
             
             displayQuestion(question) {
+                // Reset answer selection state
+                this.answerSelected = false;
+                this.isSubmitting = false;
+                
                 // Update progress
                 const progress = ((this.currentQuestion - 1) / {{ quiz.total_questions }}) * 100;
                 document.getElementById('progressBar').style.width = progress + '%';
@@ -560,7 +612,7 @@
                 // Display question
                 document.getElementById('questionText').textContent = question.question_text;
                 
-                // Create options
+                // Create options with proper state management
                 const container = document.getElementById('optionsContainer');
                 container.innerHTML = '';
                 
@@ -569,36 +621,67 @@
                     if (value) { // Only show non-empty options
                         const button = document.createElement('button');
                         button.className = 'option-button';
+                        button.type = 'button'; // Prevent form submission
                         button.innerHTML = `
                             <span class="option-letter">${key}</span>
                             ${value}
                         `;
-                        button.addEventListener('click', () => this.selectAnswer(key, button));
+                        
+                        // Single event listener with debouncing
+                        let clickHandler = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            this.selectAnswer(key, button);
+                        };
+                        
+                        // Remove any existing listeners and add new one
+                        button.removeEventListener('click', clickHandler);
+                        button.addEventListener('click', clickHandler, { once: true });
+                        
                         container.appendChild(button);
                     }
                 });
                 
-                // Start timer
+                // Start timer with high precision
                 this.startTimer(question.time_limit);
                 this.questionStartTime = Date.now();
+                this.questionStartTimePrecise = performance.now();
             }
             
             selectAnswer(answer, buttonElement) {
-                // Disable all buttons
-                const buttons = document.querySelectorAll('.option-button');
-                buttons.forEach(btn => btn.disabled = true);
+                // Prevent multiple selections
+                if (this.answerSelected || this.isSubmitting) {
+                    console.log('Answer already selected or submitting, ignoring click');
+                    return;
+                }
                 
-                // Highlight selected answer
+                // Mark as selected immediately to prevent race conditions
+                this.answerSelected = true;
+                this.isSubmitting = true;
+                
+                // Remove all existing selected classes first
+                const buttons = document.querySelectorAll('.option-button');
+                buttons.forEach(btn => {
+                    btn.classList.remove('selected');
+                    btn.disabled = true;
+                    btn.style.pointerEvents = 'none'; // Extra protection
+                });
+                
+                // Highlight only the selected answer
                 buttonElement.classList.add('selected');
                 
                 // Stop timer
                 this.stopTimer();
                 
-                // Calculate time taken
-                const timeTaken = Math.round((Date.now() - this.questionStartTime) / 1000);
+                // Calculate time taken (with microsecond precision)
+                const endTime = performance.now();
+                const timeTakenMs = endTime - this.questionStartTimePrecise;
+                const timeTaken = Math.round(timeTakenMs / 1000 * 1000) / 1000; // Round to 3 decimal places
                 
-                // Submit answer
-                this.submitAnswer(answer, timeTaken);
+                // Submit answer with delay to show selection
+                setTimeout(() => {
+                    this.submitAnswer(answer, timeTaken);
+                }, 300);
             }
             
             async submitAnswer(answer, timeTaken) {
