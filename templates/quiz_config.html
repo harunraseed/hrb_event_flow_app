@@ -108,13 +108,25 @@
 
                         <!-- Display Settings -->
                         <h6 class="text-primary mb-3"><i class="fas fa-eye"></i> Display Settings</h6>
-                        <div class="mb-4">
+                        <div class="mb-3">
                             <div class="form-check">
                                 {{ form.show_leaderboard(class="form-check-input") }}
                                 <label class="form-check-label" for="show_leaderboard">
                                     Show Leaderboard
                                 </label>
                                 <small class="form-text text-muted d-block">Display results and ranking to participants</small>
+                            </div>
+                        </div>
+
+                        <!-- Feedback Settings -->
+                        <h6 class="text-primary mb-3"><i class="fas fa-comment-dots"></i> Feedback Settings</h6>
+                        <div class="mb-4">
+                            <div class="form-check">
+                                {{ form.collect_feedback(class="form-check-input") }}
+                                <label class="form-check-label" for="collect_feedback">
+                                    Collect Participant Feedback
+                                </label>
+                                <small class="form-text text-muted d-block">Ask participants for feedback after quiz completion</small>
                             </div>
                         </div>
 
@@ -146,6 +158,9 @@
                         {% endif %}
                         <p><strong>Leaderboard:</strong> 
                             <span id="preview-leaderboard">{{ "Enabled" if form.show_leaderboard.data else "Disabled" }}</span>
+                        </p>
+                        <p><strong>Feedback Collection:</strong> 
+                            <span id="preview-feedback">{{ "Enabled" if form.collect_feedback.data else "Disabled" }}</span>
                         </p>
                         <p><strong>Status:</strong> 
                             <span id="preview-status" class="badge bg-{{ 'success' if form.is_active.data else 'secondary' }}">

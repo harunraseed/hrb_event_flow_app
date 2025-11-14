@@ -420,6 +420,9 @@
             <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-success">📥 Export CSV</a>
             <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-warning">🏆 Certificates</a>
             <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary">🧠 Quiz</a>
+            {% if session.get('user_role') == 'superadmin' %}
+            <a href="{{ url_for('view_event_feedback', event_id=event.id) }}" class="btn btn-secondary">📊 Feedback</a>
+            {% endif %}
         </div>
         <div class="mt-2">
             <button type="button" class="btn btn-danger btn-sm" onclick="confirmDeleteEvent()">

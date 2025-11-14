@@ -423,7 +423,7 @@
                     
                     if (data.success) {
                         if (data.completed) {
-                            this.showResults(data.score, data.total_questions);
+                            this.showResults(data.score, data.total_questions, data);
                         } else {
                             this.displayQuestion(data.question);
                         }
@@ -594,7 +594,7 @@
                     '<p class="text-warning"><i class="fas fa-clock"></i> Time\'s up!</p>';
             }
             
-            showResults(finalScore, totalQuestions) {
+            showResults(finalScore, totalQuestions, completionData) {
                 document.getElementById('quizScreen').style.display = 'none';
                 document.getElementById('resultsScreen').style.display = 'block';
                 
@@ -619,6 +619,19 @@
                 }
                 
                 document.getElementById('scoreMessage').textContent = message;
+                
+                // Check if feedback collection is enabled and redirect after a delay
+                if (completionData && completionData.collect_feedback) {
+                    setTimeout(() => {
+                        window.location.href = `/event/{{ event.id }}/feedback/${this.attemptId}`;
+                    }, 3000); // Wait 3 seconds to show results first
+                    
+                    // Add feedback notice
+                    const feedbackNotice = document.createElement('div');
+                    feedbackNotice.className = 'alert alert-info mt-3';
+                    feedbackNotice.innerHTML = '<i class="fas fa-comment-dots me-2"></i>Redirecting to feedback form in 3 seconds...';
+                    document.getElementById('resultsScreen').appendChild(feedbackNotice);
+                }
             }
             
             showLoading() {

@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Event Feedback Analytics - {{ event.name }}{% endblock %}
+
+{% block head %}
+<style>
+.feedback-analytics {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.analytics-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #667eea;
+    margin-bottom: 0.5rem;
+}
+
+.stat-label {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.rating-distribution {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+}
+
+.rating-bar {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.rating-label {
+    width: 60px;
+    font-weight: 600;
+}
+
+.rating-progress {
+    flex: 1;
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 10px;
+    margin: 0 1rem;
+    overflow: hidden;
+}
+
+.rating-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.5s ease;
+}
+
+.rating-count {
+    width: 40px;
+    text-align: right;
+    font-weight: 600;
+    color: #495057;
+}
+
+.feedback-list {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.feedback-item {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.feedback-item:last-child {
+    border-bottom: none;
+}
+
+.feedback-header {
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.participant-info {
+    flex: 1;
+}
+
+.participant-name {
+    font-weight: 600;
+    color: #495057;
+}
+
+.participant-email {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.feedback-rating {
+    display: flex;
+    gap: 0.2rem;
+}
+
+.star {
+    color: #ffc107;
+    font-size: 1.2rem;
+}
+
+.star.empty {
+    color: #dee2e6;
+}
+
+.feedback-date {
+    font-size: 0.8rem;
+    color: #6c757d;
+    text-align: right;
+}
+
+.feedback-review {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    font-style: italic;
+    color: #495057;
+    margin-top: 0.5rem;
+}
+
+.no-feedback {
+    text-align: center;
+    padding: 3rem;
+    color: #6c757d;
+}
+
+.back-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    text-decoration: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 25px;
+    font-weight: 600;
+    display: inline-block;
+    margin-bottom: 2rem;
+    transition: transform 0.2s ease;
+}
+
+.back-btn:hover {
+    color: white;
+    text-decoration: none;
+    transform: translateY(-2px);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="feedback-analytics">
+    <a href="{{ url_for('index') }}" class="back-btn">
+        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+    </a>
+
+    <div class="analytics-header">
+        <h1><i class="fas fa-chart-bar me-2"></i>Feedback Analytics</h1>
+        <h3>{{ event.name }}</h3>
+        <p class="mb-0">Participant feedback and event ratings</p>
+    </div>
+
+    {% if stats.total_feedbacks > 0 %}
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.total_feedbacks }}</div>
+                <div class="stat-label">Total Feedback</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.average_rating }}<span style="font-size: 1rem;">/5.0</span></div>
+                <div class="stat-label">Average Rating</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-value">{{ "%.1f"|format((stats.average_rating/5)*100) }}%</div>
+                <div class="stat-label">Satisfaction Rate</div>
+            </div>
+        </div>
+
+        <div class="rating-distribution">
+            <h4 class="mb-3"><i class="fas fa-star text-warning me-2"></i>Rating Distribution</h4>
+            
+            {% for rating in range(5, 0, -1) %}
+            <div class="rating-bar">
+                <div class="rating-label">{{ rating }} ★</div>
+                <div class="rating-progress">
+                    <div class="rating-fill" style="width: {{ (stats.rating_distribution[rating] / stats.total_feedbacks * 100) if stats.total_feedbacks > 0 else 0 }}%"></div>
+                </div>
+                <div class="rating-count">{{ stats.rating_distribution[rating] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="feedback-list">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e9ecef; background: #f8f9fa;">
+                <h4 class="mb-0"><i class="fas fa-comments me-2"></i>Participant Feedback</h4>
+            </div>
+            
+            {% for feedback in feedbacks %}
+            <div class="feedback-item">
+                <div class="feedback-header">
+                    <div class="participant-info">
+                        <div class="participant-name">{{ feedback.participant.name }}</div>
+                        <div class="participant-email">{{ feedback.participant.email }}</div>
+                    </div>
+                    
+                    <div style="text-align: right;">
+                        <div class="feedback-rating">
+                            {% for i in range(1, 6) %}
+                                <span class="star {{ 'empty' if i > feedback.rating else '' }}">★</span>
+                            {% endfor %}
+                        </div>
+                        <div class="feedback-date">
+                            {{ feedback.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </div>
+                    </div>
+                </div>
+                
+                {% if feedback.review %}
+                <div class="feedback-review">
+                    "{{ feedback.review }}"
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        
+    {% else %}
+        <div class="no-feedback">
+            <i class="fas fa-comment-slash fa-3x text-muted mb-3"></i>
+            <h4>No Feedback Yet</h4>
+            <p class="text-muted">No participants have submitted feedback for this event yet.</p>
+        </div>
+    {% endif %}
+</div>
+
+<script>
+// Animate rating bars on load
+document.addEventListener('DOMContentLoaded', function() {
+    const bars = document.querySelectorAll('.rating-fill');
+    bars.forEach(bar => {
+        const width = bar.style.width;
+        bar.style.width = '0%';
+        setTimeout(() => {
+            bar.style.width = width;
+        }, 300);
+    });
+});
+</script>
+{% endblock %}

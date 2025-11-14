@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Event Feedback - {{ event.name }}{% endblock %}
+
+{% block head %}
+<style>
+.feedback-container {
+    max-width: 600px;
+    margin: 2rem auto;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    padding: 3rem;
+}
+
+.quiz-summary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.score-display {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 1rem 0;
+}
+
+.star-rating {
+    display: flex;
+    justify-content: center;
+    margin: 2rem 0;
+    gap: 0.5rem;
+}
+
+.star {
+    font-size: 2rem;
+    color: #ddd;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.star:hover,
+.star.active {
+    color: #ffc107;
+}
+
+.feedback-form {
+    margin-top: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s ease;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.btn-submit {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 25px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    width: 100%;
+}
+
+.btn-submit:hover {
+    transform: translateY(-2px);
+}
+
+.btn-skip {
+    background: transparent;
+    color: #6c757d;
+    border: 2px solid #dee2e6;
+    padding: 0.75rem 2rem;
+    border-radius: 25px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+    margin-top: 1rem;
+}
+
+.btn-skip:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+.loading {
+    display: none;
+    text-align: center;
+    margin-top: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="feedback-container">
+    <div class="quiz-summary">
+        <h2>🎉 Quiz Completed!</h2>
+        <div class="score-display">{{ quiz_attempt.score }}/{{ quiz_attempt.quiz.total_questions }}</div>
+        <p>Great job on completing the {{ event.name }} quiz!</p>
+    </div>
+
+    <div class="text-center mb-4">
+        <h3>How was your experience?</h3>
+        <p class="text-muted">Your feedback helps us improve future events</p>
+    </div>
+
+    <form id="feedbackForm" class="feedback-form">
+        <div class="form-group">
+            <label class="form-label">Rating *</label>
+            <div class="star-rating" id="starRating">
+                <span class="star" data-rating="1">★</span>
+                <span class="star" data-rating="2">★</span>
+                <span class="star" data-rating="3">★</span>
+                <span class="star" data-rating="4">★</span>
+                <span class="star" data-rating="5">★</span>
+            </div>
+            <input type="hidden" name="rating" id="ratingInput" required>
+        </div>
+
+        <div class="form-group">
+            <label for="review" class="form-label">Your Review (Optional)</label>
+            <textarea 
+                name="review" 
+                id="review" 
+                class="form-control" 
+                rows="4" 
+                placeholder="Tell us about your experience with the event and quiz..."
+            ></textarea>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">
+            Submit Feedback
+        </button>
+        
+        <button type="button" class="btn-skip" onclick="skipFeedback()">
+            Skip for now
+        </button>
+    </form>
+
+    <div class="loading" id="loading">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Submitting feedback...</span>
+        </div>
+        <p class="mt-2">Submitting your feedback...</p>
+    </div>
+</div>
+
+<script>
+// Star rating functionality
+let selectedRating = 0;
+
+document.querySelectorAll('.star').forEach(star => {
+    star.addEventListener('click', function() {
+        selectedRating = parseInt(this.dataset.rating);
+        updateStarDisplay();
+        document.getElementById('ratingInput').value = selectedRating;
+    });
+    
+    star.addEventListener('mouseover', function() {
+        const rating = parseInt(this.dataset.rating);
+        highlightStars(rating);
+    });
+});
+
+document.getElementById('starRating').addEventListener('mouseleave', function() {
+    updateStarDisplay();
+});
+
+function highlightStars(rating) {
+    document.querySelectorAll('.star').forEach((star, index) => {
+        if (index < rating) {
+            star.classList.add('active');
+        } else {
+            star.classList.remove('active');
+        }
+    });
+}
+
+function updateStarDisplay() {
+    highlightStars(selectedRating);
+}
+
+// Form submission
+document.getElementById('feedbackForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    if (selectedRating === 0) {
+        alert('Please select a rating before submitting');
+        return;
+    }
+    
+    const formData = new FormData(this);
+    
+    // Show loading state
+    document.getElementById('submitBtn').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+    
+    fetch('{{ url_for("submit_feedback", event_id=event.id, quiz_attempt_id=quiz_attempt.id) }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccessMessage();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to submit feedback'));
+            resetForm();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to submit feedback. Please try again.');
+        resetForm();
+    });
+});
+
+function showSuccessMessage() {
+    document.querySelector('.feedback-container').innerHTML = `
+        <div class="text-center">
+            <div class="quiz-summary">
+                <h2>🙏 Thank You!</h2>
+                <p>Your feedback has been submitted successfully.</p>
+            </div>
+            <button onclick="window.close() || (window.location.href = '{{ url_for("index") }}')" 
+                    class="btn-submit">
+                Close
+            </button>
+        </div>
+    `;
+}
+
+function resetForm() {
+    document.getElementById('submitBtn').style.display = 'block';
+    document.getElementById('loading').style.display = 'none';
+}
+
+function skipFeedback() {
+    if (confirm('Are you sure you want to skip providing feedback?')) {
+        window.close() || (window.location.href = '{{ url_for("index") }}');
+    }
+}
+</script>
+{% endblock %}

@@ -294,6 +294,7 @@ class QuizConfigForm(FlaskForm):
     participant_limit = IntegerField('Maximum Participants', validators=[DataRequired(), NumberRange(min=1, max=1000)], default=100)
     is_active = BooleanField('Quiz is Active', default=False)
     show_leaderboard = BooleanField('Show Leaderboard', default=True)
+    collect_feedback = BooleanField('Collect Participant Feedback', default=False)
     submit = SubmitField('Save Quiz Configuration')
 
 class QuizQuestionForm(FlaskForm):
@@ -528,6 +529,9 @@ class Quiz(db.Model):
     is_active = db.Column(db.Boolean, default=False)
     show_leaderboard = db.Column(db.Boolean, default=True)
     
+    # Feedback collection
+    collect_feedback = db.Column(db.Boolean, default=False)  # Whether to show feedback form after quiz
+    
     # Timestamps
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -574,10 +578,10 @@ class Quiz(db.Model):
         """Get top participants with scores - improved sorting"""
         from sqlalchemy import desc
         
-        # Get all attempts with participant info, ordered properly
+        # Get all attempts with participant info, ordered properly with microsecond precision
         attempts = QuizAttempt.query.filter_by(quiz_id=self.id, is_completed=True)\
             .join(Participant)\
-            .order_by(desc(QuizAttempt.score), QuizAttempt.total_time_taken.asc(), QuizAttempt.completed_at.asc())\
+            .order_by(desc(QuizAttempt.score), QuizAttempt.total_time_taken.asc(), QuizAttempt.completion_timestamp.asc())\
             .all()
         
         return attempts[:50]  # Top 50 for full leaderboard
@@ -648,14 +652,15 @@ class QuizAttempt(db.Model):
     participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=False)
     
     # Attempt details
-    started_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    completed_at = db.Column(db.DateTime)
+    started_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime(timezone=True))
     current_question = db.Column(db.Integer, default=1)
     score = db.Column(db.Integer, default=0)
     is_completed = db.Column(db.Boolean, default=False)
     
-    # Time tracking
-    total_time_taken = db.Column(db.Integer, default=0)  # in seconds
+    # Time tracking with microsecond precision
+    total_time_taken = db.Column(db.Float, default=0.0)  # in seconds with microseconds
+    completion_timestamp = db.Column(db.Float)  # Unix timestamp with microseconds for precise ordering
     
     # Relationships
     participant = db.relationship('Participant', backref='quiz_attempts')
@@ -695,6 +700,26 @@ class QuizAnswer(db.Model):
     
     def __repr__(self):
         return f'<QuizAnswer {self.selected_answer} for Question {self.question.question_order}>'
+
+class EventFeedback(db.Model):
+    __tablename__ = 'event_feedbacks'
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False)
+    participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=False)
+    quiz_attempt_id = db.Column(db.Integer, db.ForeignKey('quiz_attempts.id'))
+    
+    # Feedback details
+    rating = db.Column(db.Integer, nullable=False)  # 1-5 stars
+    review = db.Column(db.Text)  # Optional text feedback
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    event = db.relationship('Event', backref='feedbacks')
+    participant = db.relationship('Participant', backref='feedbacks')
+    quiz_attempt = db.relationship('QuizAttempt', backref='feedback')
+    
+    def __repr__(self):
+        return f'<EventFeedback {self.rating} stars for {self.event.name}>'
 
 # Authentication Models
 class User(UserMixin, db.Model):
@@ -3671,15 +3696,19 @@ def get_quiz_question(attempt_id):
         
         if not question:
             # No more questions, complete the attempt
+            import time
+            completion_time = datetime.now(timezone.utc)
             attempt.is_completed = True
-            attempt.completed_at = datetime.now(timezone.utc)
+            attempt.completed_at = completion_time
+            attempt.completion_timestamp = time.time()  # Unix timestamp with microseconds
             db.session.commit()
             
             return jsonify({
                 'success': True,
                 'completed': True,
                 'score': attempt.score,
-                'total_questions': quiz.total_questions
+                'total_questions': quiz.total_questions,
+                'collect_feedback': quiz.collect_feedback  # Include feedback flag
             })
         
         return jsonify({
@@ -3830,6 +3859,11 @@ def quiz_live_leaderboard_api(quiz_id):
             # Calculate progress percentage
             progress = (attempt.current_question - 1) / max(quiz.total_questions, 1) * 100
             
+            # Format completion time with microseconds for completed attempts
+            completion_time_formatted = None
+            if attempt.completed_at:
+                completion_time_formatted = attempt.completed_at.strftime('%H:%M:%S.%f')[:-3]  # Include milliseconds
+            
             leaderboard_data.append({
                 'rank': i,
                 'participant_name': participant.name,
@@ -3838,9 +3872,10 @@ def quiz_live_leaderboard_api(quiz_id):
                 'current_question': attempt.current_question,
                 'total_questions': quiz.total_questions,
                 'progress_percentage': round(progress, 1),
-                'total_time_taken': attempt.total_time_taken,
+                'total_time_taken': round(attempt.total_time_taken, 3),  # Show seconds with 3 decimal places
                 'is_completed': attempt.is_completed,
-                'completion_time': attempt.completed_at.strftime('%H:%M:%S') if attempt.completed_at else None,
+                'completion_time': completion_time_formatted,
+                'completion_timestamp': attempt.completion_timestamp if attempt.completion_timestamp else None,
                 'status': 'Completed' if attempt.is_completed else f'Question {attempt.current_question}/{quiz.total_questions}'
             })
         
@@ -4222,6 +4257,122 @@ def debug_email_config_v2():
             'success': False,
             'message': f'Email config check error: {str(e)}'
         }), 500
+
+@app.route('/event/<int:event_id>/feedback/<int:quiz_attempt_id>')
+def feedback_form(event_id, quiz_attempt_id):
+    """Show feedback form after quiz completion"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz_attempt = QuizAttempt.query.get_or_404(quiz_attempt_id)
+        
+        # Verify this attempt belongs to this event and is completed
+        if quiz_attempt.quiz.event_id != event_id or not quiz_attempt.is_completed:
+            flash('Invalid feedback request.', 'error')
+            return redirect(url_for('index'))
+        
+        # Check if feedback already exists
+        existing_feedback = EventFeedback.query.filter_by(
+            event_id=event_id,
+            quiz_attempt_id=quiz_attempt_id
+        ).first()
+        
+        if existing_feedback:
+            flash('Feedback already submitted for this quiz.', 'info')
+            return redirect(url_for('index'))
+        
+        return render_template('feedback_form.html', 
+                             event=event, 
+                             quiz_attempt=quiz_attempt)
+        
+    except Exception as e:
+        flash('Error loading feedback form.', 'error')
+        return redirect(url_for('index'))
+
+@app.route('/event/<int:event_id>/feedback/<int:quiz_attempt_id>/submit', methods=['POST'])
+def submit_feedback(event_id, quiz_attempt_id):
+    """Submit feedback for the event"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz_attempt = QuizAttempt.query.get_or_404(quiz_attempt_id)
+        
+        # Verify this attempt belongs to this event and is completed
+        if quiz_attempt.quiz.event_id != event_id or not quiz_attempt.is_completed:
+            return jsonify({'success': False, 'message': 'Invalid feedback submission'}), 400
+        
+        # Check if feedback already exists
+        existing_feedback = EventFeedback.query.filter_by(
+            event_id=event_id,
+            quiz_attempt_id=quiz_attempt_id
+        ).first()
+        
+        if existing_feedback:
+            return jsonify({'success': False, 'message': 'Feedback already submitted'}), 400
+        
+        # Get form data
+        rating = request.form.get('rating', type=int)
+        review = request.form.get('review', '').strip()
+        
+        # Validate rating
+        if not rating or rating < 1 or rating > 5:
+            return jsonify({'success': False, 'message': 'Please provide a valid rating (1-5 stars)'}), 400
+        
+        # Create feedback record
+        feedback = EventFeedback(
+            event_id=event_id,
+            participant_id=quiz_attempt.participant_id,
+            quiz_attempt_id=quiz_attempt_id,
+            rating=rating,
+            review=review if review else None
+        )
+        
+        db.session.add(feedback)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Thank you for your feedback!'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'Error submitting feedback'}), 500
+
+@app.route('/admin/event/<int:event_id>/feedback')
+@require_superadmin  # Only super admin can view feedback
+def view_event_feedback(event_id):
+    """View all feedback for an event (Super Admin only)"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        
+        # Get all feedback for this event with participant details
+        feedbacks = EventFeedback.query.filter_by(event_id=event_id)\
+            .join(Participant)\
+            .order_by(EventFeedback.created_at.desc())\
+            .all()
+        
+        # Calculate feedback statistics
+        if feedbacks:
+            ratings = [f.rating for f in feedbacks]
+            avg_rating = sum(ratings) / len(ratings)
+            rating_distribution = {i: ratings.count(i) for i in range(1, 6)}
+        else:
+            avg_rating = 0
+            rating_distribution = {i: 0 for i in range(1, 6)}
+        
+        stats = {
+            'total_feedbacks': len(feedbacks),
+            'average_rating': round(avg_rating, 2),
+            'rating_distribution': rating_distribution
+        }
+        
+        return render_template('admin_feedback_view.html', 
+                             event=event, 
+                             feedbacks=feedbacks,
+                             stats=stats)
+        
+    except Exception as e:
+        flash('Error loading feedback data.', 'error')
+        return redirect(url_for('index'))
 
 # Export for Vercel
 application = app
