@@ -3,7 +3,6 @@
 {% block title %}Quiz Dashboard - {{ event.name }}{% endblock %}
 
 {% block content %}
-<meta name="csrf-token" content="{{ csrf_token() }}">
 <div class="container-fluid">
     <!-- Header -->
     <div class="row mb-4">
@@ -73,11 +72,9 @@
                         
                         <!-- Quiz Management Actions -->
                         <div class="btn-group mt-2" role="group">
-                            {% if stats.total_attempts > 0 %}
-                                <button class="btn btn-outline-warning btn-sm" onclick="resetQuiz()">
-                                    <i class="fas fa-redo"></i> Reset Quiz
-                                </button>
-                            {% endif %}
+                            <button class="btn btn-outline-warning btn-sm" onclick="resetQuiz()">
+                                <i class="fas fa-redo"></i> Reset Quiz
+                            </button>
                             <button class="btn btn-outline-danger btn-sm" onclick="deleteQuiz()">
                                 <i class="fas fa-trash"></i> Delete Quiz
                             </button>
@@ -368,7 +365,7 @@ function copyQuizLink() {
 function deleteQuestion(questionId) {
     if (confirm('Are you sure you want to delete this question?')) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        fetch(`/event/{{ event.id }}/quiz/questions/${questionId}/delete`, {
+        fetch(`/event/{{ event.id }}/quiz/question/${questionId}/delete`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -505,23 +502,7 @@ function toggleQuestionVisibility() {
     }
 }
 
-function copyQuizLink() {
-    const linkInput = document.getElementById('quizLink');
-    linkInput.select();
-    linkInput.setSelectionRange(0, 99999); // For mobile devices
-    document.execCommand('copy');
-    
-    // Show success feedback
-    const copyBtn = event.target.closest('button');
-    const originalHTML = copyBtn.innerHTML;
-    copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-    copyBtn.className = 'btn btn-success';
-    
-    setTimeout(() => {
-        copyBtn.innerHTML = originalHTML;
-        copyBtn.className = 'btn btn-outline-secondary';
-    }, 2000);
-}
+// copyQuizLink function removed - now handled in quiz_share.html
 
 function deleteQuestion(questionId) {
     if (confirm('Are you sure you want to delete this question? This action cannot be undone.')) {

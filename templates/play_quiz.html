@@ -140,12 +140,22 @@
         }
         
         .floating-animation {
-            animation: float 3s ease-in-out infinite;
+            animation: float 2s ease-in-out infinite;
+        }
+        
+        .animated-pulse {
+            animation: pulse 2s infinite;
         }
         
         @keyframes float {
             0%, 100% { transform: translateY(0px); }
             50% { transform: translateY(-10px); }
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
         }
         
         .pulse {
@@ -200,6 +210,15 @@
                     <p class="text-muted">{{ event.name }}</p>
                     {% if quiz.description %}
                         <p class="small">{{ quiz.description }}</p>
+                    {% endif %}
+                    
+                    <!-- Quiz Status Banner -->
+                    {% if not quiz.is_started %}
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-users me-2"></i>
+                            <strong>Registration Phase</strong><br>
+                            <small>Join now! Quiz will start when the gamemaster is ready.</small>
+                        </div>
                     {% endif %}
                 </div>
                 
@@ -262,6 +281,46 @@
                         </p>
                     {% endif %}
                 </form>
+            </div>
+            
+            <!-- Waiting Screen (Hidden Initially) -->
+            <div id="waitingScreen" style="display: none;">
+                <div class="text-center p-5">
+                    <div class="mb-4">
+                        <i class="fas fa-clock fa-4x text-info animated-pulse"></i>
+                    </div>
+                    
+                    <h3 class="text-info mb-3">Successfully Joined!</h3>
+                    <h5 id="waitingMessage" class="mb-4">Waiting for gamemaster to start the quiz...</h5>
+                    
+                    <div class="alert alert-info">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Participants Ready:</strong>
+                                <span id="participantCount" class="badge bg-primary ms-2">Loading...</span>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Status:</strong>
+                                <span class="badge bg-warning">Registration Phase</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="spinner-border text-info mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    
+                    <p class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        The quiz will begin automatically when the gamemaster starts it.
+                    </p>
+                    
+                    <div class="mt-4">
+                        <small class="text-muted">
+                            Last updated: <span id="lastUpdate">Just now</span>
+                        </small>
+                    </div>
+                </div>
             </div>
             
             <!-- Quiz Screen (Hidden Initially) -->
@@ -396,8 +455,16 @@
                         this.participantId = data.participant_id;
                         this.currentQuestion = data.current_question;
                         
-                        this.showQuizScreen();
-                        this.loadQuestion();
+                        if (data.registration_phase) {
+                            // Show waiting screen during registration
+                            this.showWaitingScreen(data.message);
+                            // Poll for quiz start
+                            this.pollForQuizStart();
+                        } else {
+                            // Quiz already started, go directly to quiz
+                            this.showQuizScreen();
+                            this.loadQuestion();
+                        }
                     } else {
                         alert(data.error || 'Failed to join quiz');
                     }
@@ -407,8 +474,54 @@
                 }
             }
             
+            showWaitingScreen(message) {
+                document.getElementById('joinScreen').style.display = 'none';
+                document.getElementById('waitingScreen').style.display = 'block';
+                document.getElementById('waitingMessage').textContent = message;
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            }
+            
+            async pollForQuizStart() {
+                const checkQuizStatus = async () => {
+                    try {
+                        const response = await fetch(`/quiz/attempt/${this.attemptId}/question`);
+                        const data = await response.json();
+                        
+                        if (data.success && !data.registration_phase) {
+                            // Quiz has started! Transition to quiz screen
+                            clearInterval(this.pollInterval);
+                            this.showQuizScreen();
+                            this.loadQuestion();
+                        } else if (data.registration_phase) {
+                            // Still in registration, update participant count if available
+                            this.updateParticipantCount();
+                            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                        }
+                    } catch (error) {
+                        console.error('Error checking quiz status:', error);
+                    }
+                };
+                
+                // Check every 2 seconds
+                this.pollInterval = setInterval(checkQuizStatus, 2000);
+                
+                // Initial check
+                checkQuizStatus();
+            }
+            
+            async updateParticipantCount() {
+                try {
+                    // You could add an endpoint to get current participant count
+                    // For now, we'll just show a loading state
+                    document.getElementById('participantCount').textContent = 'Live';
+                } catch (error) {
+                    console.error('Error updating participant count:', error);
+                }
+            }
+            
             showQuizScreen() {
                 document.getElementById('joinScreen').style.display = 'none';
+                document.getElementById('waitingScreen').style.display = 'none';
                 document.getElementById('quizScreen').style.display = 'block';
             }
             

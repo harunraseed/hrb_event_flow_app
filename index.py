@@ -3542,8 +3542,8 @@ def upload_quiz_questions(event_id):
     
     return render_template('upload_quiz_questions.html', event=event, quiz=quiz, form=form)
 
-@app.route('/event/<int:event_id>/quiz/questions/<int:question_id>/delete', methods=['POST'])
-@require_approval_for_action('delete_quiz_question')
+@app.route('/event/<int:event_id>/quiz/question/<int:question_id>/delete', methods=['POST'])
+@require_admin
 def delete_quiz_question(event_id, question_id):
     """Delete a quiz question"""
     try:
@@ -3564,7 +3564,7 @@ def delete_quiz_question(event_id, question_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/event/<int:event_id>/quiz/delete', methods=['POST'])
-@require_approval_for_action('delete_quiz')
+@require_admin
 def delete_quiz(event_id):
     """Delete the entire quiz and all related data"""
     try:
@@ -3628,9 +3628,8 @@ def reset_quiz(event_id):
         
         # Comprehensive quiz state reset
         quiz.is_active = False
-        quiz.is_ended = False  # Reset ended state too
         quiz.quiz_start_time = None
-        quiz.quiz_end_time = None
+        quiz.quiz_end_time = None  # Setting this to None makes is_ended return False
         quiz.updated_at = datetime.now(timezone.utc)
         
         # Commit all changes
@@ -3648,10 +3647,10 @@ def reset_quiz(event_id):
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/event/<int:event_id>/quiz/start', methods=['POST'])
+@app.route('/event/<int:event_id>/quiz/open-registration', methods=['POST'])
 @require_admin
-def start_quiz(event_id):
-    """Start the quiz (admin function)"""
+def open_quiz_registration(event_id):
+    """Open quiz for participant registration (Phase 1)"""
     try:
         event = Event.query.get_or_404(event_id)
         quiz = Quiz.query.filter_by(event_id=event_id).first()
@@ -3662,11 +3661,44 @@ def start_quiz(event_id):
         if not quiz.questions:
             return jsonify({'success': False, 'error': 'No questions added to quiz'}), 400
         
-        quiz.quiz_start_time = datetime.now(timezone.utc)
-        quiz.is_active = True
+        # Open for registration but don't start quiz yet
+        quiz.is_active = True  
+        quiz.quiz_start_time = None  # Key: No start time = registration only
+        quiz.quiz_end_time = None
         db.session.commit()
         
-        return jsonify({'success': True, 'message': 'Quiz started successfully!'})
+        return jsonify({'success': True, 'message': 'Quiz registration opened! Participants can now join.'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/event/<int:event_id>/quiz/start', methods=['POST'])
+@require_admin
+def start_quiz(event_id):
+    """Start the quiz for all participants (Phase 2)"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        quiz = Quiz.query.filter_by(event_id=event_id).first()
+        
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        if not quiz.is_active:
+            return jsonify({'success': False, 'error': 'Quiz registration must be opened first'}), 400
+        
+        if quiz.is_started:
+            return jsonify({'success': False, 'error': 'Quiz already started'}), 400
+        
+        if not quiz.questions:
+            return jsonify({'success': False, 'error': 'No questions added to quiz'}), 400
+        
+        # Start the actual quiz
+        quiz.quiz_start_time = datetime.now(timezone.utc)
+        # is_active remains True so people can still join if needed
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Quiz started! {quiz.current_participants} participants can now take the quiz.'})
         
     except Exception as e:
         db.session.rollback()
@@ -3743,11 +3775,14 @@ def join_quiz(event_id):
                 }
                 quiz_performance.cache_quiz_data(event_id, quiz_cache_data)
         
-        if not quiz or not quiz.is_active or quiz.is_ended:
-            if quiz and quiz.is_ended:
-                return jsonify({'success': False, 'error': 'Quiz has ended. Check the leaderboard for results.'}), 400
-            else:
-                return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
+        if not quiz:
+            return jsonify({'success': False, 'error': 'Quiz not found'}), 404
+        
+        if not quiz.is_active:
+            return jsonify({'success': False, 'error': 'Quiz registration is not open'}), 400
+            
+        if quiz.is_ended:
+            return jsonify({'success': False, 'error': 'Quiz has ended. Check the leaderboard for results.'}), 400
         
         # Check participant limit before allowing new participants
         if quiz.is_full:
@@ -3768,15 +3803,47 @@ def join_quiz(event_id):
                 if not participant_name:
                     return jsonify({'success': False, 'error': 'Name is required for new participants'}), 400
                 
-                # Create external participant linked to this event
+                # Generate static data for external participants with EXT- prefix
+                import uuid
+                import time
+                
+                # Generate unique ticket number with EXT- prefix - ensure uniqueness
+                attempts = 0
+                while attempts < 5:  # Try up to 5 times to generate unique ticket
+                    try:
+                        ext_ticket_number = f"EXT-{event_id}-{int(time.time())}-{uuid.uuid4().hex[:6].upper()}"
+                        
+                        # Check if ticket number already exists
+                        existing = Participant.query.filter_by(ticket_number=ext_ticket_number).first()
+                        if not existing:
+                            break
+                        attempts += 1
+                        time.sleep(0.001)  # Small delay before retry
+                    except:
+                        attempts += 1
+                        
+                if attempts >= 5:
+                    return jsonify({'success': False, 'error': 'Unable to generate unique ticket number'}), 500
+                
+                # Create external participant with all required fields
                 participant = Participant(
                     name=participant_name,
                     email=participant_email,
                     event_id=event_id,
-                    checked_in=True  # Auto check-in quiz participants
+                    ticket_number=ext_ticket_number,
+                    checked_in=True,  # Auto check-in quiz participants
+                    checkin_time=datetime.now(timezone.utc),
+                    email_sent=False,  # No email needed for external participants
+                    email_sent_date=None,
+                    created_at=datetime.now(timezone.utc)
                 )
                 db.session.add(participant)
-                db.session.flush()
+                try:
+                    db.session.flush()
+                except Exception as e:
+                    # Handle any database constraint errors
+                    db.session.rollback()
+                    return jsonify({'success': False, 'error': f'Database error: {str(e)}'}), 500
         else:
             # Standard logic: Only event participants can join
             participant = Participant.query.filter_by(
@@ -3820,11 +3887,17 @@ def join_quiz(event_id):
         
         db.session.commit()
         
+        # Check if quiz has started for participants
+        quiz_started = quiz.is_started
+        
         return jsonify({
             'success': True,
             'attempt_id': attempt.id,
             'participant_id': participant.id,
-            'current_question': attempt.current_question
+            'current_question': attempt.current_question,
+            'quiz_started': quiz_started,
+            'registration_phase': not quiz_started,
+            'message': 'Joined quiz successfully! Waiting for gamemaster to start...' if not quiz_started else 'Quiz started! You can begin answering questions.'
         })
         
     except Exception as e:
@@ -3838,8 +3911,18 @@ def get_quiz_question(attempt_id):
         attempt = QuizAttempt.query.get_or_404(attempt_id)
         quiz = attempt.quiz
         
-        if not quiz.is_active or quiz.is_ended:
+        if not quiz.is_active:
             return jsonify({'success': False, 'error': 'Quiz is not active'}), 400
+        
+        if quiz.is_ended:
+            return jsonify({'success': False, 'error': 'Quiz has ended'}), 400
+        
+        if not quiz.is_started:
+            return jsonify({
+                'success': False, 
+                'error': 'Quiz not started yet. Please wait for the gamemaster to start the quiz.',
+                'registration_phase': True
+            }), 400
         
         # Get current question
         question = QuizQuestion.query.filter_by(

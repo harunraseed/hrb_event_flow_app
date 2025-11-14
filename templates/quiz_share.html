@@ -25,12 +25,14 @@
     <!-- Quiz Status -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="alert {% if quiz.is_active %}alert-success{% elif quiz.is_ended %}alert-danger{% else %}alert-warning{% endif %}">
+            <div class="alert {% if quiz.is_active and quiz.is_started %}alert-success{% elif quiz.is_active and not quiz.is_started %}alert-primary{% elif quiz.is_ended %}alert-danger{% else %}alert-warning{% endif %}">
                 <div class="row align-items-center">
                     <div class="col-md-8">
                         <h5 class="mb-0">
-                            {% if quiz.is_active %}
-                                <i class="fas fa-play-circle"></i> Quiz is Active
+                            {% if quiz.is_active and quiz.is_started %}
+                                <i class="fas fa-play-circle"></i> Quiz is Running
+                            {% elif quiz.is_active and not quiz.is_started %}
+                                <i class="fas fa-users"></i> Registration Open
                             {% elif quiz.is_ended %}
                                 <i class="fas fa-stop-circle"></i> Quiz has Ended
                             {% else %}
@@ -38,21 +40,32 @@
                             {% endif %}
                         </h5>
                         <p class="mb-0">
-                            {% if quiz.is_active %}
-                                Participants can join and start taking the quiz
+                            {% if quiz.is_active and quiz.is_started %}
+                                Participants are taking the quiz right now
+                            {% elif quiz.is_active and not quiz.is_started %}
+                                📱 <strong>Show QR code to participants!</strong> They can join now, quiz will start when you're ready.
                             {% elif quiz.is_ended %}
                                 Quiz has ended, no new participants allowed
                             {% else %}
-                                Start the quiz to allow participants to join
+                                Open registration first to allow participants to join
                             {% endif %}
                         </p>
                     </div>
                     <div class="col-md-4 text-end">
                         {% if not quiz.is_active and not quiz.is_ended %}
-                            <button class="btn btn-success" onclick="startQuiz()">
-                                <i class="fas fa-play"></i> Start Quiz
+                            <button class="btn btn-primary" onclick="openRegistration()">
+                                <i class="fas fa-qr-code"></i> Open Registration
                             </button>
-                        {% elif quiz.is_active %}
+                        {% elif quiz.is_active and not quiz.is_started %}
+                            <div class="d-grid gap-1">
+                                <button class="btn btn-success" onclick="startQuiz()">
+                                    <i class="fas fa-play"></i> Start Quiz ({{ quiz.current_participants }} ready)
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm" onclick="endQuiz()">
+                                    <i class="fas fa-times"></i> Close Registration
+                                </button>
+                            </div>
+                        {% elif quiz.is_active and quiz.is_started %}
                             <button class="btn btn-danger" onclick="endQuiz()">
                                 <i class="fas fa-stop"></i> End Quiz
                             </button>
@@ -264,8 +277,33 @@
 </div>
 
 <script>
+function openRegistration() {
+    if (confirm('📱 Open quiz registration?\n\nThis will display the QR code and allow participants to join. You can start the quiz when ready.')) {
+        fetch(`/event/{{ event.id }}/quiz/open-registration`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Registration opened! Show the QR code to participants.');
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Network error occurred');
+        });
+    }
+}
+
 function startQuiz() {
-    if (confirm('Are you sure you want to start the quiz? This will allow participants to join.')) {
+    if (confirm('🚀 Start the quiz for all registered participants?\n\nThis will begin the quiz session and participants will start receiving questions immediately.')) {
         fetch(`/event/{{ event.id }}/quiz/start`, {
             method: 'POST',
             headers: {
@@ -276,9 +314,10 @@ function startQuiz() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                alert('✅ ' + data.message);
                 location.reload();
             } else {
-                alert('Error: ' + data.error);
+                alert('❌ Error: ' + data.error);
             }
         })
         .catch(error => {

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Game Master Dashboard - {{ quiz.title }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
@@ -262,24 +263,45 @@
                     <div class="card-body">
                         <div class="d-grid gap-2">
                             {% if not quiz.is_active and not quiz.is_ended %}
-                                <button class="btn btn-success btn-lg" onclick="startQuizAsGamemaster()">
-                                    <i class="bi bi-play-circle-fill me-2"></i>
-                                    Start Quiz for All Participants
+                                <!-- Phase 1: Open Registration -->
+                                <button class="btn btn-primary btn-lg" onclick="openRegistration()">
+                                    <i class="bi bi-qr-code me-2"></i>
+                                    Open Registration & Show QR
                                 </button>
                                 <small class="text-muted text-center">
                                     <i class="bi bi-info-circle me-1"></i>
-                                    Wait for participants to join, then start the quiz
+                                    Step 1: Let participants scan QR and join
                                 </small>
-                            {% elif quiz.is_active %}
+                                
+                            {% elif quiz.is_active and not quiz.is_started %}
+                                <!-- Phase 2: Start Quiz -->
+                                <button class="btn btn-success btn-lg pulse" onclick="startQuizAsGamemaster()">
+                                    <i class="bi bi-play-circle-fill me-2"></i>
+                                    Start Quiz Now!
+                                </button>
+                                <small class="text-success text-center fw-bold">
+                                    <i class="bi bi-people me-1"></i>
+                                    <span id="registeredCount">{{ quiz.current_participants }}</span> participants ready!
+                                </small>
+                                
+                                <button class="btn btn-outline-danger btn-sm mt-2" onclick="closeRegistration()">
+                                    <i class="bi bi-x-circle me-1"></i>
+                                    Close Registration
+                                </button>
+                                
+                            {% elif quiz.is_active and quiz.is_started %}
+                                <!-- Phase 3: Quiz Running -->
                                 <button class="btn btn-danger btn-lg" onclick="endQuizAsGamemaster()">
                                     <i class="bi bi-stop-circle-fill me-2"></i>
                                     End Quiz Now
                                 </button>
-                                <small class="text-muted text-center">
+                                <small class="text-warning text-center">
                                     <i class="bi bi-clock me-1"></i>
-                                    Quiz is currently active
+                                    Quiz is currently running
                                 </small>
+                                
                             {% else %}
+                                <!-- Quiz Ended -->
                                 <div class="alert alert-info mb-0">
                                     <i class="bi bi-flag-fill me-2"></i>
                                     Quiz has ended
@@ -590,19 +612,75 @@
             `;
         }
         
-        // Gamemaster Quiz Control Functions
-        function startQuizAsGamemaster() {
-            if (confirm('🚀 Start the quiz for all participants?\n\nThis will begin the quiz session and participants will start receiving questions.')) {
-                fetch(`/event/{{ event.id }}/quiz/start`, {
+        // Gamemaster Quiz Control Functions - Two Phase System
+        
+        function openRegistration() {
+            if (confirm('📱 Open quiz registration?\n\nThis will display the QR code and allow participants to join. You can start the quiz when ready.')) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                fetch(`/event/{{ event.id }}/quiz/open-registration`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
                     }
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        alert('✅ Quiz started successfully! Participants can now begin.');
+                        alert('✅ Registration opened! Show the QR code to participants.');
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Network error occurred');
+                });
+            }
+        }
+        
+        function startQuizAsGamemaster() {
+            const participantCount = document.getElementById('registeredCount').textContent || '0';
+            if (confirm(`🚀 Start the quiz for ${participantCount} participants?\n\nThis will begin the quiz session and participants will start receiving questions immediately.`)) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                fetch(`/event/{{ event.id }}/quiz/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ ' + data.message);
+                        location.reload();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Network error occurred');
+                });
+            }
+        }
+        
+        function closeRegistration() {
+            if (confirm('🔒 Close quiz registration?\n\nNo new participants will be able to join after this.')) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                fetch(`/event/{{ event.id }}/quiz/end`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('✅ Registration closed.');
                         location.reload();
                     } else {
                         alert('❌ Error: ' + data.error);
@@ -617,10 +695,12 @@
 
         function endQuizAsGamemaster() {
             if (confirm('🛑 End the quiz now?\n\nThis will stop the quiz for all participants and show final results.')) {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                 fetch(`/event/{{ event.id }}/quiz/end`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
                     }
                 })
                 .then(response => response.json())
