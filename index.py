@@ -4,15 +4,24 @@ from datetime import datetime, timezone, timedelta
 from functools import wraps
 
 # CRITICAL FIX: Vercel has broken psycopg2 in _vendor directory
-# We need to remove ONLY psycopg2 from the vendor path before SQLAlchemy imports it
+# Force Python to ignore _vendor/psycopg2 and use our psycopg2-binary
 if '/var/task/_vendor' in sys.path:
-    import importlib
-    # Block psycopg2 import from _vendor by removing it if it exists
-    vendor_psycopg2 = '/var/task/_vendor/psycopg2'
-    if os.path.exists(vendor_psycopg2):
-        # Insert our own packages BEFORE _vendor in path priority
-        sys.path.insert(0, '/var/task')
-        print("Prioritized /var/task over _vendor for psycopg2-binary")
+    # Remove _vendor/psycopg2 from being importable by filtering sys.path
+    original_path = sys.path.copy()
+    
+    # Temporarily remove _vendor to import our clean psycopg2-binary
+    sys.path = [p for p in sys.path if '_vendor' not in p]
+    
+    try:
+        # Pre-import psycopg2-binary before anything else can import the broken one
+        import psycopg2
+        print(f"✓ Loaded clean psycopg2-binary from {psycopg2.__file__}")
+        
+        # Now restore sys.path but psycopg2 is already in sys.modules
+        sys.path = original_path
+    except Exception as e:
+        print(f"Warning: Could not pre-load psycopg2-binary: {e}")
+        sys.path = original_path
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
