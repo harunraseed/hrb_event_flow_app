@@ -2,7 +2,7 @@
 name = "event-ticketing-app"
 version = "1.0.0"
 description = "Event ticketing and quiz management system"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.12"
 dependencies = [
     "Flask==3.0.0",
     "Flask-SQLAlchemy==3.1.1",
@@ -14,10 +14,13 @@ dependencies = [
     "python-dotenv==1.0.1",
     "requests==2.31.0",
     "email-validator==2.1.0",
-    "psycopg2-binary==2.9.9",
+    "pg8000==1.31.2",
+    "scramp==1.4.6",
     "redis==5.0.1",
     "qrcode==7.4.2",
     "Pillow==10.1.0",
+    "reportlab==4.0.7",
+    "gunicorn==21.2.0",
 ]
 
 [tool.uv]
