@@ -65,6 +65,10 @@ if os.getenv('DATABASE_URL'):
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
+    # Use pg8000 driver for serverless compatibility (Vercel)
+    if 'postgresql://' in database_url and '+pg8000' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     
     # Production connection pool settings for high concurrency
@@ -1279,6 +1283,32 @@ def setup_initial_user():
             'message': f'Failed to create superuser: {str(e)}',
             'error_type': type(e).__name__
         }), 500
+
+@app.route('/debug/db-connection')
+def debug_db_connection():
+    """Debug database connection and users"""
+    try:
+        db_url = app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')
+        # Mask password in URL for security
+        if '@' in db_url:
+            parts = db_url.split('@')
+            user_pass = parts[0].split('//')[-1]
+            masked = user_pass.split(':')[0] + ':****'
+            db_url_display = db_url.replace(user_pass, masked)
+        else:
+            db_url_display = db_url
+        
+        users = User.query.all()
+        user_list = [{'id': u.id, 'username': u.username, 'role': u.role, 'active': u.is_active} for u in users]
+        
+        return jsonify({
+            'database_url': db_url_display,
+            'total_users': len(users),
+            'users': user_list,
+            'environment': 'production' if os.getenv('DATABASE_URL') else 'development'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'type': type(e).__name__})
 
 @app.route('/admin/setup/status')
 def setup_status():
