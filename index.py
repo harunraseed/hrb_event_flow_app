@@ -44,11 +44,12 @@ storage_manager = StorageManager()
 # CRITICAL: Specify static and template folders
 # Set instance_path to temp directory for serverless environments to avoid read-only filesystem errors
 import tempfile
+# Always use temp directory for instance path to prevent read-only filesystem errors
 app = Flask(__name__,
             static_folder='static',
             static_url_path='/static',
             template_folder='templates',
-            instance_path=tempfile.gettempdir() if os.getenv('DATABASE_URL') else None)
+            instance_path=tempfile.gettempdir())
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -90,6 +91,8 @@ else:
     print("Using SQLite database for local development")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Disable binds to prevent instance folder creation
+app.config['SQLALCHEMY_BINDS'] = None
 
 # Email configuration with enhanced production support
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
