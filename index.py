@@ -1374,8 +1374,22 @@ def login():
         return redirect(url_for('admin_dashboard'))
     
     form = LoginForm()
+    
+    if request.method == 'POST':
+        print(f"POST received - Form validation: {form.validate_on_submit()}")
+        print(f"Form errors: {form.errors}")
+    
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
+        username = form.username.data.strip()
+        user = User.query.filter_by(username=username).first()
+        
+        print(f"Login attempt - Username: '{username}'")
+        print(f"User found: {user is not None}")
+        if user:
+            print(f"User active: {user.is_active}")
+            password_match = user.check_password(form.password.data)
+            print(f"Password check: {password_match}")
+            print(f"Password hash in DB: {user.password_hash[:30]}...")
         
         if user and user.check_password(form.password.data) and user.is_active:
             login_user(user, remember=form.remember_me.data)
