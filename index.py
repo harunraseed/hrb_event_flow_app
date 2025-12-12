@@ -56,42 +56,18 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-pro
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
-# Database configuration - try PostgreSQL with fallback to SQLite
+# Database configuration - ALWAYS use SQLite on Vercel for now
+# PostgreSQL drivers don't work in Vercel's serverless environment
 database_url = os.getenv('DATABASE_URL')
-use_postgres = False
 
-if database_url:
-    try:
-        # Fix postgres:// to postgresql://
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        
-        # Don't specify driver, let SQLAlchemy find what's available
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        
-        # Simpler connection pool for serverless
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'pool_size': 5,
-            'max_overflow': 10,
-            'pool_timeout': 30,
-            'pool_pre_ping': True,
-            'pool_recycle': 300,
-        }
-        use_postgres = True
-        print("Configured PostgreSQL database")
-    except Exception as e:
-        print(f"PostgreSQL config failed: {e}, falling back to SQLite")
-        use_postgres = False
-
-if not use_postgres:
-    # Use SQLite as fallback
-    sqlite_path = os.path.join(tempfile.gettempdir(), 'event_ticketing.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_timeout': 20,
-        'pool_recycle': -1,
-    }
-    print(f"Using SQLite database at {sqlite_path}")
+# Force SQLite for Vercel deployment
+sqlite_path = os.path.join(tempfile.gettempdir(), 'event_ticketing.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_timeout': 20,
+    'pool_recycle': -1,
+}
+print(f"Using SQLite database at {sqlite_path}")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -1281,6 +1257,48 @@ def setup_initial_user():
             'status': 'error',
             'message': f'Failed to create superuser: {str(e)}',
             'error_type': type(e).__name__
+        }), 500
+
+@app.route('/init-db-vercel')
+def init_db_vercel():
+    """Initialize database and create superadmin for Vercel"""
+    try:
+        # Create all tables
+        db.create_all()
+        
+        # Check if superadmin exists
+        superadmin = User.query.filter_by(username='superadmin').first()
+        
+        if not superadmin:
+            # Create superadmin
+            superadmin = User(
+                username='superadmin',
+                email='admin@example.com',
+                role='superadmin',
+                is_active=True
+            )
+            superadmin.set_password('Admin@123')
+            db.session.add(superadmin)
+            db.session.commit()
+            message = "Database initialized and superadmin created!"
+        else:
+            message = "Database already initialized, superadmin exists"
+        
+        users = User.query.all()
+        user_list = [{'id': u.id, 'username': u.username, 'role': u.role} for u in users]
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'database': app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set'),
+            'total_users': len(users),
+            'users': user_list
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'type': type(e).__name__
         }), 500
 
 @app.route('/debug/db-connection')
