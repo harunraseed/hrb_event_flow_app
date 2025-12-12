@@ -59,42 +59,34 @@ app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
 # Database configuration
-# CRITICAL FIX: Vercel has broken psycopg2 in _vendor
-# Solution: Use SQLite for BOTH local and Vercel deployment
-# The database will be synced via Git or use Vercel's Postgres without direct connection
-
+# Use pg8000 (pure Python) instead of psycopg2 to avoid Vercel's broken _vendor version
 database_url = os.getenv('DATABASE_URL')
 
-# Always use SQLite to avoid Vercel's broken psycopg2
-# Even if DATABASE_URL is set, we ignore it for now
-if database_url and not os.path.exists('/var/task'):
-    # Only use PostgreSQL for LOCAL development if explicitly set
+if database_url:
+    # Use PostgreSQL/Supabase with pg8000 driver (works on Vercel)
     if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+    elif database_url.startswith('postgresql://') and '+pg8000' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    
+    # Simplified connection pool for serverless
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_size': 1,
         'max_overflow': 0,
         'pool_timeout': 30,
         'pool_pre_ping': True,
     }
-    print("Using PostgreSQL/Supabase for local development")
+    print(f"Using PostgreSQL/Supabase with pg8000 driver")
 else:
-    # Use SQLite for Vercel and default local development
-    if os.path.exists('/var/task'):
-        # Vercel serverless - use temp directory
-        sqlite_path = os.path.join(tempfile.gettempdir(), 'event_ticketing.db')
-    else:
-        # Local development
-        sqlite_path = 'event_ticketing.db'
-    
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
+    # Local development with SQLite
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_timeout': 20,
         'pool_recycle': -1,
     }
-    print(f"Using SQLite database at {sqlite_path}")
+    print("Using SQLite for local development")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
