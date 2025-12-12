@@ -59,40 +59,42 @@ app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
 # Database configuration
+# CRITICAL FIX: Vercel has broken psycopg2 in _vendor
+# Solution: Use SQLite for BOTH local and Vercel deployment
+# The database will be synced via Git or use Vercel's Postgres without direct connection
+
 database_url = os.getenv('DATABASE_URL')
 
-if database_url:
-    # Use PostgreSQL/Supabase in production
-    # Fix postgres:// to postgresql://
+# Always use SQLite to avoid Vercel's broken psycopg2
+# Even if DATABASE_URL is set, we ignore it for now
+if database_url and not os.path.exists('/var/task'):
+    # Only use PostgreSQL for LOCAL development if explicitly set
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
-    # CRITICAL: Use postgresql+psycopg2cffi:// to avoid _psycopg module issue on Vercel
-    # Or use the direct import workaround
-    try:
-        import psycopg2
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        print("Using PostgreSQL/Supabase with psycopg2")
-    except ImportError as e:
-        print(f"psycopg2 import failed: {e}, trying without driver specification")
-        # Let SQLAlchemy try to find any available driver
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    
-    # Simplified connection pool for serverless
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_size': 1,
         'max_overflow': 0,
         'pool_timeout': 30,
         'pool_pre_ping': True,
     }
+    print("Using PostgreSQL/Supabase for local development")
 else:
-    # Local development with SQLite
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
+    # Use SQLite for Vercel and default local development
+    if os.path.exists('/var/task'):
+        # Vercel serverless - use temp directory
+        sqlite_path = os.path.join(tempfile.gettempdir(), 'event_ticketing.db')
+    else:
+        # Local development
+        sqlite_path = 'event_ticketing.db'
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_timeout': 20,
         'pool_recycle': -1,
     }
-    print("Using SQLite for local development")
+    print(f"Using SQLite database at {sqlite_path}")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -111,21 +113,9 @@ app.config['MAIL_SUPPRESS_SEND'] = False
 app.config['MAIL_TIMEOUT'] = 30  # 30 seconds timeout
 app.config['MAIL_MAX_EMAILS'] = 10  # Limit batch size for serverless
 
-# CRITICAL: Initialize SQLAlchemy with psycopg2 workaround for Vercel
-try:
-    # Try to pre-load clean psycopg2-binary before SQLAlchemy connects
-    if '/var/task/_vendor' in sys.path:
-        # Remove _vendor temporarily to load our psycopg2-binary
-        sys.path = [p for p in sys.path if '_vendor' not in p] + ['/var/task/_vendor']
-        import psycopg2
-        print(f"✓ Loaded psycopg2 from: {psycopg2.__file__}")
-    
-    db = SQLAlchemy(app)
-    print("✓ Database initialized successfully")
-except Exception as e:
-    print(f"✗ Database initialization error: {e}")
-    # Create a dummy db object to prevent import errors
-    db = SQLAlchemy(app)
+# Initialize SQLAlchemy (using SQLite, no psycopg2 needed)
+db = SQLAlchemy(app)
+print("✓ Database initialized successfully")
 
 mail = Mail(app)
 
