@@ -1,6 +1,14 @@
 ﻿import os
+import sys
 from datetime import datetime, timezone, timedelta
 from functools import wraps
+
+# CRITICAL FIX: Vercel has broken psycopg2 in _vendor directory
+# Remove _vendor from sys.path BEFORE importing SQLAlchemy
+if '/var/task/_vendor' in sys.path:
+    sys.path = [p for p in sys.path if '_vendor' not in p]
+    print("Removed _vendor from sys.path - using clean psycopg2-binary")
+
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import joinedload
@@ -65,7 +73,16 @@ if database_url:
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    # CRITICAL: Use postgresql+psycopg2cffi:// to avoid _psycopg module issue on Vercel
+    # Or use the direct import workaround
+    try:
+        import psycopg2
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        print("Using PostgreSQL/Supabase with psycopg2")
+    except ImportError as e:
+        print(f"psycopg2 import failed: {e}, trying without driver specification")
+        # Let SQLAlchemy try to find any available driver
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     
     # Simplified connection pool for serverless
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -74,7 +91,6 @@ if database_url:
         'pool_timeout': 30,
         'pool_pre_ping': True,
     }
-    print("Using PostgreSQL/Supabase database")
 else:
     # Local development with SQLite
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
@@ -101,7 +117,8 @@ app.config['MAIL_SUPPRESS_SEND'] = False
 app.config['MAIL_TIMEOUT'] = 30  # 30 seconds timeout
 app.config['MAIL_MAX_EMAILS'] = 10  # Limit batch size for serverless
 
-db = SQLAlchemy(app)
+# Initialize SQLAlchemy without binding to app yet (lazy init)
+db = SQLAlchemy()
 mail = Mail(app)
 
 # Initialize authentication
@@ -113,6 +130,9 @@ login_manager.login_message_category = 'info'
 
 # Initialize password hashing
 bcrypt = Bcrypt(app)
+
+# Bind database after all config is set (deferred connection)
+db.init_app(app)
 
 # Initialize performance manager for high-concurrency quiz support
 quiz_performance = QuizPerformanceManager()
@@ -3472,14 +3492,16 @@ def generate_certificate_with_reportlab(participant, event, certificate):
         traceback.print_exc()
         return None
 
-# Initialize database on startup
-with app.app_context():
-    try:
-        # Only create tables if they don't exist (preserve existing data)
-        db.create_all()
-        print("🗃️ Database tables created/verified (existing data preserved)")
-    except Exception as e:
-        print(f"Warning: Could not create database tables: {e}")
+# Initialize database on startup (only for local development)
+# Vercel will have database already set up
+if not os.getenv('DATABASE_URL'):
+    with app.app_context():
+        try:
+            # Only create tables if they don't exist (preserve existing data)
+            db.create_all()
+            print("🗃️ Database tables created/verified (existing data preserved)")
+        except Exception as e:
+            print(f"Warning: Could not create database tables: {e}")
 
 # Quiz Routes
 @app.route('/event/<int:event_id>/quiz')
