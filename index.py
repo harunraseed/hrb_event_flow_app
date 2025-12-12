@@ -56,43 +56,42 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-pro
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit for development
 
-# Database configuration with connection pooling for high concurrency
-if os.getenv('DATABASE_URL'):
-    # Use PostgreSQL in production (including Vercel)
-    database_url = os.getenv('DATABASE_URL')
-    
-    # Fix Heroku/Vercel postgres URL if needed
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    
-    # Use psycopg (v3) driver for serverless compatibility (Vercel)
-    if 'postgresql://' in database_url and '+psycopg' not in database_url:
-        database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
-    
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    
-    # Production connection pool settings for high concurrency
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 10,        # Base connections
-        'max_overflow': 20,     # Additional connections under load
-        'pool_timeout': 30,     # Timeout for getting connection
-        'pool_recycle': 300,    # Recycle connections every 5 minutes
-        'pool_pre_ping': True,  # Verify connections before use
-        'connect_args': {
-            'connect_timeout': 10,
-            'application_name': 'event_ticketing_quiz',
-            'options': '-c statement_timeout=30000'  # 30s query timeout
+# Database configuration - try PostgreSQL with fallback to SQLite
+database_url = os.getenv('DATABASE_URL')
+use_postgres = False
+
+if database_url:
+    try:
+        # Fix postgres:// to postgresql://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        
+        # Don't specify driver, let SQLAlchemy find what's available
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        
+        # Simpler connection pool for serverless
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_size': 5,
+            'max_overflow': 10,
+            'pool_timeout': 30,
+            'pool_pre_ping': True,
+            'pool_recycle': 300,
         }
-    }
-    print("Using PostgreSQL database with connection pooling")
-else:
-    # Use SQLite for local development
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///event_ticketing.db'
+        use_postgres = True
+        print("Configured PostgreSQL database")
+    except Exception as e:
+        print(f"PostgreSQL config failed: {e}, falling back to SQLite")
+        use_postgres = False
+
+if not use_postgres:
+    # Use SQLite as fallback
+    sqlite_path = os.path.join(tempfile.gettempdir(), 'event_ticketing.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{sqlite_path}'
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_timeout': 20,
         'pool_recycle': -1,
     }
-    print("Using SQLite database for local development")
+    print(f"Using SQLite database at {sqlite_path}")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
