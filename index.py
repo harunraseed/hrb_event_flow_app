@@ -42,10 +42,13 @@ load_dotenv()
 storage_manager = StorageManager()
 
 # CRITICAL: Specify static and template folders
+# Set instance_path to temp directory for serverless environments to avoid read-only filesystem errors
+import tempfile
 app = Flask(__name__,
             static_folder='static',
             static_url_path='/static',
-            template_folder='templates')
+            template_folder='templates',
+            instance_path=tempfile.gettempdir() if os.getenv('DATABASE_URL') else None)
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -85,13 +88,6 @@ else:
         'pool_recycle': -1,
     }
     print("Using SQLite database for local development")
-
-# Disable instance folder for serverless/read-only filesystems (Vercel)
-# MUST be set BEFORE SQLAlchemy initialization
-if os.getenv('DATABASE_URL'):
-    # In production with PostgreSQL, don't use instance folder
-    import tempfile
-    app.instance_path = tempfile.gettempdir()
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
