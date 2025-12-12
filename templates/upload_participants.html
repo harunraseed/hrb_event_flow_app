@@ -19,6 +19,7 @@ Jane Smith,jane@example.com</pre>
             </div>
         </div>
         <form method="POST" enctype="multipart/form-data" class="mt-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <div class="mb-3">
                 <label for="file" class="form-label">Select CSV File</label>
                 <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
