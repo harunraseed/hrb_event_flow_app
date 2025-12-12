@@ -1376,8 +1376,11 @@ def login():
     form = LoginForm()
     
     if request.method == 'POST':
-        print(f"POST received - Form validation: {form.validate_on_submit()}")
+        print(f"POST received")
+        print(f"Form data - Username: {request.form.get('username')}")
+        print(f"Form validation: {form.validate_on_submit()}")
         print(f"Form errors: {form.errors}")
+        print(f"CSRF enabled: {app.config.get('WTF_CSRF_ENABLED')}")
     
     if form.validate_on_submit():
         username = form.username.data.strip()
