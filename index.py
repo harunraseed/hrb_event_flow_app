@@ -88,6 +88,14 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Disable instance folder for serverless/read-only filesystems (Vercel)
+if os.getenv('DATABASE_URL'):
+    # In production with PostgreSQL, don't use instance folder
+    app.config['SQLALCHEMY_BINDS'] = None
+    # Prevent SQLAlchemy from trying to create instance folder
+    import tempfile
+    app.instance_path = tempfile.gettempdir()
+
 # Email configuration with enhanced production support
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
