@@ -86,15 +86,14 @@ else:
     }
     print("Using SQLite database for local development")
 
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 # Disable instance folder for serverless/read-only filesystems (Vercel)
+# MUST be set BEFORE SQLAlchemy initialization
 if os.getenv('DATABASE_URL'):
     # In production with PostgreSQL, don't use instance folder
-    app.config['SQLALCHEMY_BINDS'] = None
-    # Prevent SQLAlchemy from trying to create instance folder
     import tempfile
     app.instance_path = tempfile.gettempdir()
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Email configuration with enhanced production support
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
@@ -1703,14 +1702,22 @@ def upload_participants(event_id):
             return redirect(url_for('upload_participants', event_id=event_id))
         
         try:
-            stream = io.TextIOWrapper(file.stream, encoding='utf-8')
+            stream = io.TextIOWrapper(file.stream, encoding='utf-8-sig')  # utf-8-sig removes BOM
             csv_data = csv.DictReader(stream)
             
+            # Debug: Print CSV headers
+            print(f"CSV Headers: {csv_data.fieldnames}")
+            
+            added_count = 0
             for row in csv_data:
-                name = row.get('name', '').strip()
-                email = row.get('email', '').strip()
+                # Try different common column name variations (case-insensitive)
+                name = (row.get('name') or row.get('Name') or row.get('NAME') or 
+                       row.get('participant_name') or row.get('Participant Name') or '').strip()
+                email = (row.get('email') or row.get('Email') or row.get('EMAIL') or 
+                        row.get('participant_email') or row.get('Participant Email') or '').strip()
                 
                 if not name or not email:
+                    print(f"Skipping row with missing data: name={name}, email={email}")
                     continue
                 
                 ticket_number = event.generate_ticket_number()
@@ -1721,9 +1728,12 @@ def upload_participants(event_id):
                     ticket_number=ticket_number
                 )
                 db.session.add(participant)
+                added_count += 1
+                print(f"Added participant: {name} ({email}) - Ticket: {ticket_number}")
             
             db.session.commit()
-            flash('Participants uploaded successfully!', 'success')
+            print(f"Successfully committed {added_count} participants to database")
+            flash(f'Successfully uploaded {added_count} participants!', 'success')
             return redirect(url_for('event_dashboard', event_id=event_id))
         except Exception as e:
             db.session.rollback()
