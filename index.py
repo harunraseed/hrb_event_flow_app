@@ -91,8 +91,6 @@ else:
     print("Using SQLite database for local development")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Disable binds to prevent instance folder creation
-app.config['SQLALCHEMY_BINDS'] = None
 
 # Email configuration with enhanced production support
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
