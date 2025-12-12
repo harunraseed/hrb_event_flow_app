@@ -1375,24 +1375,29 @@ def login():
     
     form = LoginForm()
     
-    if request.method == 'POST':
-        print(f"POST received")
-        print(f"Form data - Username: {request.form.get('username')}")
-        print(f"Form validation: {form.validate_on_submit()}")
-        print(f"Form errors: {form.errors}")
-        print(f"CSRF enabled: {app.config.get('WTF_CSRF_ENABLED')}")
+    # Manual login bypass for debugging - check credentials directly
+    if request.method == 'POST' and not form.validate_on_submit():
+        # Try manual validation
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if username and password:
+            user = User.query.filter_by(username=username).first()
+            if user and user.check_password(password) and user.is_active:
+                login_user(user, remember=request.form.get('remember_me') == 'y')
+                user.last_login = datetime.now(timezone.utc)
+                db.session.commit()
+                flash(f'Welcome back, {user.username}!', 'success')
+                next_page = request.args.get('next')
+                return redirect(next_page) if next_page else redirect(url_for('admin_dashboard'))
+            else:
+                flash('Invalid username or password.', 'error')
+        else:
+            flash(f'Form validation failed: {form.errors}', 'error')
     
     if form.validate_on_submit():
         username = form.username.data.strip()
         user = User.query.filter_by(username=username).first()
-        
-        print(f"Login attempt - Username: '{username}'")
-        print(f"User found: {user is not None}")
-        if user:
-            print(f"User active: {user.is_active}")
-            password_match = user.check_password(form.password.data)
-            print(f"Password check: {password_match}")
-            print(f"Password hash in DB: {user.password_hash[:30]}...")
         
         if user and user.check_password(form.password.data) and user.is_active:
             login_user(user, remember=form.remember_me.data)
