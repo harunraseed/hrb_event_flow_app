@@ -4,10 +4,15 @@ from datetime import datetime, timezone, timedelta
 from functools import wraps
 
 # CRITICAL FIX: Vercel has broken psycopg2 in _vendor directory
-# Remove _vendor from sys.path BEFORE importing SQLAlchemy
+# We need to remove ONLY psycopg2 from the vendor path before SQLAlchemy imports it
 if '/var/task/_vendor' in sys.path:
-    sys.path = [p for p in sys.path if '_vendor' not in p]
-    print("Removed _vendor from sys.path - using clean psycopg2-binary")
+    import importlib
+    # Block psycopg2 import from _vendor by removing it if it exists
+    vendor_psycopg2 = '/var/task/_vendor/psycopg2'
+    if os.path.exists(vendor_psycopg2):
+        # Insert our own packages BEFORE _vendor in path priority
+        sys.path.insert(0, '/var/task')
+        print("Prioritized /var/task over _vendor for psycopg2-binary")
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
