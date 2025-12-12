@@ -3,28 +3,53 @@ import sys
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 
-# CRITICAL FIX: Vercel has broken psycopg2 in _vendor directory
-# Force Python to ignore _vendor/psycopg2 and use our psycopg2-binary
-if '/var/task/_vendor' in sys.path:
-    # Remove _vendor/psycopg2 from being importable by filtering sys.path
-    original_path = sys.path.copy()
-    
-    # Temporarily remove _vendor to import our clean psycopg2-binary
-    sys.path = [p for p in sys.path if '_vendor' not in p]
-    
-    try:
-        # Pre-import psycopg2-binary before anything else can import the broken one
-        import psycopg2
-        print(f"✓ Loaded clean psycopg2-binary from {psycopg2.__file__}")
-        
-        # Now restore sys.path but psycopg2 is already in sys.modules
-        sys.path = original_path
-    except Exception as e:
-        print(f"Warning: Could not pre-load psycopg2-binary: {e}")
-        sys.path = original_path
-
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
-from flask_sqlalchemy import SQLAlchemy
+
+# CRITICAL FIX: Vercel's _vendor has broken psycopg2
+# We'll lazy-load SQLAlchemy after we can handle the import properly
+class LazyDB:
+    """Lazy database loader to work around Vercel's broken psycopg2"""
+    _db = None
+    _app = None
+    
+    def __init__(self):
+        pass
+    
+    def init_app(self, app):
+        """Store app for later initialization"""
+        self._app = app
+        # Don't actually connect yet - wait until first use
+    
+    def _ensure_initialized(self):
+        """Actually initialize SQLAlchemy on first use"""
+        if self._db is None and self._app is not None:
+            # Try to fix psycopg2 import
+            try:
+                # Remove _vendor paths temporarily
+                original_path = sys.path.copy()
+                sys.path = [p for p in sys.path if '_vendor' not in p]
+                
+                # Import our clean psycopg2-binary
+                import psycopg2
+                sys.modules['psycopg2'] = psycopg2
+                print(f"✓ Loaded psycopg2 from {psycopg2.__file__}")
+                
+                # Restore path
+                sys.path = original_path
+            except:
+                pass
+            
+            # Now import and initialize SQLAlchemy
+            from flask_sqlalchemy import SQLAlchemy as RealSQLAlchemy
+            self._db = RealSQLAlchemy()
+            self._db.init_app(self._app)
+        return self._db
+    
+    def __getattr__(self, name):
+        """Proxy all attribute access to the real db object"""
+        return getattr(self._ensure_initialized(), name)
+
+db = LazyDB()
 from sqlalchemy.orm import joinedload
 from flask_mail import Mail, Message
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -131,8 +156,7 @@ app.config['MAIL_SUPPRESS_SEND'] = False
 app.config['MAIL_TIMEOUT'] = 30  # 30 seconds timeout
 app.config['MAIL_MAX_EMAILS'] = 10  # Limit batch size for serverless
 
-# Initialize SQLAlchemy without binding to app yet (lazy init)
-db = SQLAlchemy()
+# db is already created above with LazyDB() - don't recreate
 mail = Mail(app)
 
 # Initialize authentication
