@@ -24,7 +24,15 @@ from utils.quiz_performance import (
     prevent_double_submission, rate_limit_quiz_joins
 )
 import tempfile
-import pdfkit
+
+# Optional imports for PDF generation (may not work in serverless)
+try:
+    import pdfkit
+    PDFKIT_AVAILABLE = True
+except ImportError:
+    PDFKIT_AVAILABLE = False
+    print("⚠️ pdfkit not available - PDF generation will be disabled")
+
 import qrcode
 from io import BytesIO
 

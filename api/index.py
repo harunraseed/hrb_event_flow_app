@@ -14,8 +14,9 @@ try:
     from index import application as main_app
     app = main_app
     print("✅ Successfully imported main Flask app")
-except ImportError as e:
-    import_error_message = str(e)
+except Exception as e:
+    import traceback
+    import_error_message = f"{str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
     print(f"❌ Import error: {import_error_message}")
     # Create a simple fallback Flask app
     from flask import Flask, jsonify
