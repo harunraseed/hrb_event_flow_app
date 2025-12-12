@@ -65,9 +65,9 @@ if os.getenv('DATABASE_URL'):
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
-    # Use pg8000 driver for serverless compatibility (Vercel)
-    if 'postgresql://' in database_url and '+pg8000' not in database_url:
-        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
+    # Use psycopg (v3) driver for serverless compatibility (Vercel)
+    if 'postgresql://' in database_url and '+psycopg' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     
