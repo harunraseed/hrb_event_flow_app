@@ -2099,15 +2099,120 @@ def toggle_checkin(participant_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
-        flash(f'{participant.name} {status}', 'success')
-        return redirect(url_for('event_dashboard', event_id=participant.event_id))
+
+
+# QR Check-in Routes
+@app.route('/event/<int:event_id>/qr-checkin')
+@require_admin
+def event_qr_checkin(event_id):
+    """Display QR code for event check-in"""
+    event = Event.query.get_or_404(event_id)
     
-    # Otherwise return JSON for AJAX calls
-    return jsonify({
-        'success': True,
-        'message': f'{participant.name} {status}',
-        'checked_in': participant.checked_in
-    })
+    # Generate QR code data - URL to check-in page
+    checkin_url = url_for('qr_checkin_page', event_id=event_id, _external=True)
+    
+    # Create QR code
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(checkin_url)
+    qr.make(fit=True)
+    
+    # Create QR code image
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Convert to base64
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    
+    return render_template('qr_checkin_admin.html', 
+                         event=event, 
+                         qr_code=img_str,
+                         checkin_url=checkin_url)
+
+
+@app.route('/checkin/<int:event_id>')
+def qr_checkin_page(event_id):
+    """Public check-in page for participants to scan QR and enter email"""
+    event = Event.query.get_or_404(event_id)
+    return render_template('qr_checkin_participant.html', event=event)
+
+
+@app.route('/api/checkin/<int:event_id>', methods=['POST'])
+@csrf.exempt
+def api_qr_checkin(event_id):
+    """API endpoint for QR check-in"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email is required'}), 400
+        
+        event = Event.query.get_or_404(event_id)
+        
+        # Find participant by email and event
+        participant = Participant.query.filter_by(
+            event_id=event_id,
+            email=email
+        ).first()
+        
+        if not participant:
+            return jsonify({
+                'success': False, 
+                'message': 'No registration found for this email in this event'
+            }), 404
+        
+        # Check if already checked in
+        if participant.checked_in:
+            return jsonify({
+                'success': False,
+                'message': f'{participant.name}, you are already checked in at {participant.checkin_time.strftime("%I:%M %p")}',
+                'already_checked_in': True
+            }), 400
+        
+        # Perform check-in
+        participant.checked_in = True
+        participant.checkin_time = datetime.now()
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Welcome {participant.name}! Check-in successful',
+            'participant_name': participant.name,
+            'ticket_number': participant.ticket_number,
+            'checkin_time': participant.checkin_time.strftime("%I:%M %p")
+        })
+        
+    except Exception as e:
+        print(f"Check-in error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/event/<int:event_id>/stats')
+def event_stats_api(event_id):
+    """API endpoint for real-time event check-in stats"""
+    try:
+        event = Event.query.get_or_404(event_id)
+        total = len(event.participants)
+        checked_in = sum(1 for p in event.participants if p.checked_in)
+        pending = total - checked_in
+        
+        return jsonify({
+            'success': True,
+            'total': total,
+            'checked_in': checked_in,
+            'pending': pending
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/send_emails/<int:event_id>', methods=['GET', 'POST'])
 @require_admin

@@ -418,6 +418,9 @@
             <a href="{{ url_for('index') }}" class="btn btn-outline-primary">🏠 Home</a>
             <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-info">📤 Upload CSV</a>
             <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-success">📥 Export CSV</a>
+            <a href="{{ url_for('event_qr_checkin', event_id=event.id) }}" class="btn btn-primary">
+                <i class="fas fa-qrcode"></i> QR Check-in
+            </a>
             <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-warning">🏆 Certificates</a>
             <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary">🧠 Quiz</a>
             {% if session.get('user_role') == 'superadmin' %}

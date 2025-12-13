@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}QR Check-in - {{ event.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-qrcode"></i> QR Check-in for {{ event.name }}
+                    </h4>
+                </div>
+                <div class="card-body text-center">
+                    <div class="alert alert-info mb-4">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Instructions:</strong> Display this QR code for participants to scan and check-in to the event.
+                    </div>
+
+                    <!-- Event Details -->
+                    <div class="mb-4">
+                        <h5 class="text-primary">{{ event.name }}</h5>
+                        <p class="text-muted mb-1">
+                            <i class="fas fa-calendar"></i> {{ event.date.strftime('%B %d, %Y') }}
+                        </p>
+                        {% if event.time %}
+                        <p class="text-muted mb-1">
+                            <i class="fas fa-clock"></i> {{ event.time.strftime('%I:%M %p') }}
+                        </p>
+                        {% endif %}
+                        {% if event.location %}
+                        <p class="text-muted">
+                            <i class="fas fa-map-marker-alt"></i> {{ event.location }}
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <!-- QR Code Display -->
+                    <div class="qr-code-container mb-4">
+                        <img src="data:image/png;base64,{{ qr_code }}" 
+                             alt="Check-in QR Code" 
+                             class="img-fluid qr-code-image"
+                             style="max-width: 400px; border: 3px solid #007bff; border-radius: 10px; padding: 20px; background: white;">
+                    </div>
+
+                    <!-- Check-in URL -->
+                    <div class="mb-4">
+                        <label class="form-label text-muted small">Direct Check-in URL:</label>
+                        <div class="input-group">
+                            <input type="text" 
+                                   id="checkinUrl" 
+                                   class="form-control" 
+                                   value="{{ checkin_url }}" 
+                                   readonly>
+                            <button class="btn btn-outline-secondary" 
+                                    type="button" 
+                                    onclick="copyUrl()"
+                                    title="Copy URL">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted">Share this URL for participants to check-in without scanning</small>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                        <button class="btn btn-success" onclick="window.print()">
+                            <i class="fas fa-print"></i> Print QR Code
+                        </button>
+                        <button class="btn btn-primary" onclick="downloadQR()">
+                            <i class="fas fa-download"></i> Download QR Code
+                        </button>
+                        <a href="{{ url_for('event_dashboard', event_id=event.id) }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+
+                    <!-- Real-time Check-in Stats -->
+                    <div class="mt-4 p-3 bg-light rounded">
+                        <h6 class="text-muted mb-3">Live Check-in Status</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="stat-box">
+                                    <h3 class="text-primary mb-0" id="totalParticipants">{{ event.participants|length }}</h3>
+                                    <small class="text-muted">Total Registered</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-box">
+                                    <h3 class="text-success mb-0" id="checkedInCount">{{ event.participants|selectattr('checked_in')|list|length }}</h3>
+                                    <small class="text-muted">Checked In</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="stat-box">
+                                    <h3 class="text-warning mb-0" id="pendingCount">{{ (event.participants|length) - (event.participants|selectattr('checked_in')|list|length) }}</h3>
+                                    <small class="text-muted">Pending</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @media print {
+        .btn, .input-group, .alert, nav, .card-header {
+            display: none !important;
+        }
+        .qr-code-image {
+            max-width: 100% !important;
+            page-break-inside: avoid;
+        }
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+    }
+
+    .stat-box {
+        padding: 15px;
+        border-radius: 8px;
+        background: white;
+    }
+
+    .qr-code-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 30px;
+        border-radius: 15px;
+        display: inline-block;
+    }
+</style>
+
+<script>
+    function copyUrl() {
+        const urlInput = document.getElementById('checkinUrl');
+        urlInput.select();
+        document.execCommand('copy');
+        
+        // Show feedback
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-outline-secondary');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-outline-secondary');
+        }, 2000);
+    }
+
+    function downloadQR() {
+        const qrImage = document.querySelector('.qr-code-image');
+        const link = document.createElement('a');
+        link.href = qrImage.src;
+        link.download = 'event-checkin-qr-{{ event.id }}.png';
+        link.click();
+    }
+
+    // Auto-refresh check-in stats every 10 seconds
+    setInterval(async () => {
+        try {
+            const response = await fetch('/api/event/{{ event.id }}/stats');
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('checkedInCount').textContent = data.checked_in;
+                document.getElementById('pendingCount').textContent = data.pending;
+            }
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+        }
+    }, 10000);
+</script>
+{% endblock %}
