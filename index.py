@@ -2137,7 +2137,7 @@ def event_qr_checkin(event_id):
 
 @app.route('/checkin/<int:event_id>')
 def qr_checkin_page(event_id):
-    """Public check-in page for participants to scan QR and enter email"""
+    """Public check-in page for participants to scan QR and enter email - NO AUTH REQUIRED"""
     event = Event.query.get_or_404(event_id)
     return render_template('qr_checkin_participant.html', event=event)
 
