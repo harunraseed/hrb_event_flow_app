@@ -10,7 +10,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+database_url = os.getenv('DATABASE_URL')
+
+if not database_url:
+    print("\n❌ ERROR: DATABASE_URL not found in environment!")
+    print("\nPlease create a .env file with:")
+    print("DATABASE_URL=postgresql://user:password@host:port/database")
+    print("\nOr use SQLite for local testing:")
+    print("DATABASE_URL=sqlite:///event_ticketing.db")
+    exit(1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
