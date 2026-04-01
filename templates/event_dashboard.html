@@ -15,11 +15,11 @@
     margin: 0;
 }
 
-.participants-table thead {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.participants-table =ad {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 }
 
-.participants-table thead th {
+.participants-table =ad th {
     border: none;
     padding: 1rem 0.875rem;
     font-weight: 600;
@@ -30,14 +30,14 @@
 }
 
 .participant-row {
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid #e2e8f0;
     transition: all 0.2s ease;
     height: auto;
     min-height: 60px;
 }
 
 .participant-row:hover {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%);
     transform: scale(1.005);
 }
 
@@ -104,7 +104,7 @@
 }
 
 .cert-badge.issued {
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
     color: white;
 }
 
@@ -129,39 +129,38 @@
 .participant-name {
     font-weight: 600;
     font-size: 0.95rem;
-    color: #1e293b;
+    color: var(--text-primary);
     line-height: 1.3;
 }
 
 .participant-email {
     font-size: 0.8rem;
-    color: #6b7280;
+    color: var(--text-secondary);
     line-height: 1.3;
 }
 
 /* Ticket number */
 .ticket-number {
-    background: linear-gradient(135deg, #f7fafc, #edf2f7);
-    color: #374151;
+    background: linear-gradient(135deg, #f8fafc, #edf2f7);
+    color: var(--text-primary);
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     font-size: 0.875rem;
     font-weight: 600;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e2e8f0;
     font-family: 'Fira Code', monospace;
 }
 
 /* Time display */
 .time-display {
     font-size: 0.8rem;
-    color: #6b7280;
+    color: var(--text-secondary);
 }
 
 .time-item {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0;
+    gap:  0.25rem;
 }
 
 /* Action buttons */
@@ -177,7 +176,6 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: white;
 }
 
 .action-btn:hover {
@@ -220,12 +218,12 @@
 }
 
 .action-btn.btn-primary {
-    color: #667eea;
-    border-color: #667eea;
+    color: #6366f1;
+    border-color: #6366f1;
 }
 
 .action-btn.btn-primary:hover {
-    background: #667eea;
+    background: #6366f1;
     color: white;
 }
 
@@ -265,45 +263,48 @@
 
 /* Search and filter section */
 .search-section {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03), rgba(118, 75, 162, 0.03) 100%);
     padding: 1.5rem;
     border-radius: 1rem;
-    border: 1px solid rgba(102, 126, 234, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.1);
     margin-bottom: 1.5rem;
 }
 
 .search-input {
-    border: 2px solid #e5e7eb;
+    border: 2px solid #d1d5db;
     border-radius: 0.75rem;
     padding: 0.75rem 1rem;
     font-size: 0.95rem;
     transition: all 0.3s ease;
+    background: white;
+    color: var(--text-primary);
 }
 
 .search-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     outline: none;
 }
 
 .filter-select {
-    border: 2px solid #e5e7eb;
+    border: 2px solid #d1d5db;
     border-radius: 0.75rem;
     padding: 0.5rem 0.75rem;
     font-size: 0.9rem;
     transition: all 0.3s ease;
     background: white;
+    color: var(--text-primary);
 }
 
 .filter-select:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     outline: none;
 }
 
-/* Add participant form */
+/* Add participant card */
 .add-participant-card {
-    border: 1px solid rgba(102, 126, 234, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.1);
     border-radius: 1rem;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
@@ -312,7 +313,7 @@
 
 /* Responsive adjustments */
 @media (max-width: 767.98px) {
-    .participants-table thead th,
+    .participants-table =ad th,
     .participants-table td {
         padding: 0.75rem 0.5rem;
         font-size: 0.8rem;
@@ -349,16 +350,16 @@
     }
 }
 
-/* Loading state for table */
+/* Loading state */
 .table-loading {
     text-align: center;
     padding: 3rem;
-    color: #6b7280;
+    color: var(--text-secondary);
 }
 
 .table-loading i {
     font-size: 2rem;
-    color: #667eea;
+    color: var(--primary-color);
     animation: spin 1s linear infinite;
 }
 
@@ -372,24 +373,36 @@
 <!-- Page Header -->
 <div class="row align-items-center mb-4">
     <div class="col-md-7">
-        <h1 class="fw-bold mb-1">
-            <i class="bi bi-calendar-event me-2" style="color: var(--primary-color);"></i>
+        <h1 class="fw-bold mb-1" style="color: var(--text-primary);">
+            <i class="bi bi-calendar-event me-2"></i>
             {{ event.name }}
         </h1>
         <p class="text-muted mb-0">
             <i class="bi bi-calendar3 me-1"></i>
-            {{ event.date.strftime('%B %d, %Y') }}
+            {{ event.date|ist_ist_time('%B %d, %Y') }}
             {% if event.time %}
-                <span class="mx-2">|</span>
+                <span class="ms-2">|</span>
                 <i class="bi bi-clock me-1"></i>
-                {{ event.time.strftime('%I:%M %p') }}
+                <span>{{ event.time|ist_ist_time('%I:%M %p') }}</span>
+                {% if event|has_attr('event_end_time') and event.event_end_time %}
+                    <span>-</span>
+                    <span>{{ event.event_end_time|ist_ist_time('%I:%M %p') }}</span>
+                {% endif %}
             {% endif %}
             {% if event.location %}
-                <span class="mx-2">|</span>
+                <span class="ms-2">|</span>
                 <i class="bi bi-geo-alt me-1"></i>
                 {{ event.location }}
             {% endif %}
         </p>
+        {% if event|has_attr('community') and event.community %}
+            <p class="mb-0">
+                <span class="badge" style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                    <i class="bi bi-people-fill"></i>
+                    {{ event.community }}
+                </span>
+            </p>
+        {% endif %}
     </div>
     <div class="col-md-5">
         <div class="d-flex flex-wrap gap-2 justify-content-md-end">
@@ -426,12 +439,77 @@
     </div>
 </div>
 
+<!-- Event Details Card -->
+{% if event.description or (event|has_attr('organizer_name') and event.organizer_name) or (event|has_attr('speakers') and event.speakers) or (event|has_attr('event_official_link') and event.event_official_link) or (event|has_attr('event_end_time') and event.event_end_time) %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm" style="border-radius: 1rem;">
+            <div class="card-header bg-transparent border-0 pt-3 pb-0">
+                <h5 class="fw-bold mb-0" style="color: var(--text-primary);">
+                    <i class="bi bi-info-circle me-2"></i>Event Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% if event.description %}
+                    <div class="col-md-6 mb-3">
+                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
+                            <i class="bi bi-card-text me-1"></i>Description
+                        </h6>
+                        <p class="mb-0" style="color: var(--text-primary); line-height: 1.6;">{{ event.description }}</p>
+                    </div>
+                    {% endif %}
+                    {% if event|has_attr('organizer_name') and event.organizer_name %}
+                    <div class="col-md-6 mb-3">
+                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
+                            <i class="bi bi-person-badge me-1"></i>Organizer
+                        </h6>
+                        <p class="mb-0" style="color: var(--text-primary);">{{ event.organizer_name }}</p>
+                    </div>
+                    {% endif %}
+                    {% if event|has_attr('speakers') and event.speakers %}
+                    <div class="col-md-6 mb-3">
+                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
+                            <i class="bi bi-mic me-1"></i>Speakers
+                        </h6>
+                        <p class="mb-0" style="color: var(--text-primary); line-height: 1.6;">{{ event.speakers|replace('\n', '<br>')|safe }}</p>
+                    </div>
+                    {% endif %}
+                    {% if event|has_attr('event_official_link') and event.event_official_link %}
+                    <div class="col-md-6 mb-3">
+                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
+                            <i class="bi bi-link-45deg me-1"></i>Official Link
+                        </h6>
+                        <a href="{{ event.event_official_link }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit Event Page
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if event|has_attr('event_end_time') and event.event_end_time %}
+                    <div class="col-md-6 mb-3">
+                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
+                            <i class="bi bi-stopwatch me-1"></i>Event Duration
+                        </h6>
+                        <p class="mb-0" style="color: var(--text-primary);">
+                            <i class="bi bi-clock me-1"></i>{{ event.time|ist_ist_time('%I:%M %p') if event.time else 'TBA' }}
+                            <span class="mx-2">-</span>
+                            {{ event.event_end_time|ist_ist_time('%I:%M %p') }}
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Statistics Cards -->
 <div class="row mb-4">
     <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
         <div class="card stats-card bg-gradient text-white h-100">
             <div class="card-body py-4">
-                <i class="bi bi-people-fill fa-2x mb-3" style="opacity: 0.9;"></i>
+                <i class="fas fa-users fa-2x mb-3" style="opacity: 0.9;"></i>
                 <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Total</h5>
                 <h2 class="mb-0" style="font-weight: 800;">{{ stats.total }}</h2>
             </div>
@@ -440,7 +518,7 @@
     <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
         <div class="card stats-card bg-success text-white h-100">
             <div class="card-body py-4">
-                <i class="bi bi-check-circle-fill fa-2x mb-3" style="opacity: 0.9;"></i>
+                <i class="fas fa-check-circle fa-2x mb-3" style="opacity: 0.9;"></i>
                 <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Checked In</h5>
                 <h2 class="mb-0" style="font-weight: 800;">{{ stats.checked_in }}</h2>
             </div>
@@ -449,7 +527,7 @@
     <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
         <div class="card stats-card bg-warning text-dark h-100">
             <div class="card-body py-4">
-                <i class="bi bi-clock-fill fa-2x mb-3" style="opacity: 0.9;"></i>
+                <i class="fas fa-clock fa-2x mb-3" style="opacity: 0.9;"></i>
                 <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Pending</h5>
                 <h2 class="mb-0" style="font-weight: 800;">{{ stats.pending }}</h2>
             </div>
@@ -458,16 +536,15 @@
     <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
         <div class="card stats-card bg-info text-white h-100">
             <div class="card-body py-4">
-                <i class="bi bi-envelope-fill fa-2x mb-3" style="opacity: 0.9;"></i>
+                <i class="fas fa-envelope fa-2x mb-3" style="opacity: 0.9;"></i>
                 <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Emails Sent</h5>
                 <h2 class="mb-0" style="font-weight: 800;">{{ stats.emails_sent }}</h2>
             </div>
-        </div>
     </div>
     <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
         <div class="card stats-card bg-secondary text-white h-100">
             <div class="card-body py-4">
-                <i class="bi bi-award-fill fa-2x mb-3" style="opacity: 0.9;"></i>
+                <i class="fas fa-award fa-2x mb-3" style="opacity: 0.9;"></i>
                 <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Certificates</h5>
                 <h2 class="mb-0" style="font-weight: 800;">{{ stats.certificates_issued }}</h2>
             </div>
@@ -488,7 +565,7 @@
                 <input type="email" class="form-control" name="email" placeholder="Email Address" required>
             </div>
             <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
+                <button type="submit" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-1"></i> Add
                 </button>
             </div>
@@ -512,17 +589,17 @@
             <button type="button" class="btn btn-outline-primary" onclick="toggleSelectAll()">
                 <i class="bi bi-check2-square me-1"></i> Select All
             </button>
-            <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning" onclick="return confirmBulkAction('send tickets to')">
-                <i class="bi bi-envelope me-1"></i> Send All
+            <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning">
+                <i class="bi bi-envelope me-1"></i> Send to Selected
             </button>
             <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-success">
                 <i class="bi bi-award me-1"></i> Certificates
             </a>
-            <button type="submit" formaction="{{ url_for('bulk_resend_tickets') }}" class="btn btn-info" onclick="return confirmBulkAction('resend tickets to')">
-                <i class="bi bi-envelope-paper me-1"></i> Resend
+            <button type="submit" formaction="{{ url_for('bulk_resend_tickets') }}" class="btn btn-info">
+                <i class="bi bi-envelope-paper me-1"></i> Resend to Selected
             </button>
-            <button type="submit" formaction="{{ url_for('bulk_delete_participants') }}" class="btn btn-danger" onclick="return confirmBulkAction('delete')">
-                <i class="bi bi-trash me-1"></i> Delete
+            <button type="submit" formaction="{{ url_for('bulk_delete_participants') }}" class="btn btn-danger">
+                <i class="bi bi-trash me-1"></i> Delete Selected
             </button>
         </div>
     </div>
@@ -535,7 +612,7 @@
                     <span class="input-group-text">
                         <i class="bi bi-search"></i>
                     </span>
-                    <input type="text" class="form-control search-input" id="searchInput"
+                    <input type="text" class="search-input" id="searchInput"
                            placeholder="Search by name, email, ticket number, status..."
                            onkeyup="searchParticipants()">
                     <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Clear Search">
@@ -544,14 +621,14 @@
                 </div>
             </div>
             <div class="col-md-4">
-                <select class="form-select filter-select" id="checkinFilter" onchange="searchParticipants()">
+                <select class="filter-select" id="checkinFilter" onchange="searchParticipants()">
                     <option value="">All Check-in Status</option>
                     <option value="checked-in">Checked In</option>
                     <option value="pending">Pending</option>
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="form-select filter-select" id="emailFilter" onchange="searchParticipants()">
+                <select class="filter-select" id="emailFilter" onchange="searchParticipants()">
                     <option value="">All Email Status</option>
                     <option value="sent">Email Sent</option>
                     <option value="not-sent">Email Not Sent</option>
@@ -630,7 +707,7 @@
                                     {% set latest_cert = participant.certificates[-1] %}
                                     {% if participant.certificates|length > 1 %}
                                         <span class="cert-badge reissued">
-                                            <i class="bi bi-arrow-clockwise"></i> Reissued
+                                            <i class="bi bi-arrow-clockwise"></i> Reissued ({{ participant.certificates|length }})
                                         </span>
                                     {% else %}
                                         <span class="cert-badge issued">
@@ -648,15 +725,15 @@
                                     <div class="time-display">
                                         <div class="time-item">
                                             <i class="bi bi-sign-in text-success"></i>
-                                            <small>{{ participant.checkin_time.strftime('%m/%d %H:%M') }}</small>
+                                            <small>{{ participant.checkin_time|ist_ist_time('%m/%d %H:%M') }}</small>
                                         </div>
-                                        {% if participant.check_out_time %}
-                                            <div class="time-item">
-                                                <i class="bi bi-sign-out text-warning"></i>
-                                                <small>{{ participant.check_out_time.strftime('%m/%d %H:%M') }}</small>
-                                            </div>
-                                        {% endif %}
-                                    </div>
+                                    {% if participant.check_out_time %}
+                                        <div class="time-item">
+                                            <i class="bi bi-sign-out text-warning"></i>
+                                            <small>{{ participant.check_out_time|ist_ist_time('%m/%d %H:%M') }}</small>
+                                        </div>
+                                    {% endif %}
+                                </div>
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}
@@ -671,7 +748,7 @@
                                             <i class="bi bi-person-check"></i>
                                         </button>
                                     {% else %}
-                                        <button type="button" class="action-btn btn-success"
+                                        <button type="button" class="action-btn btn-outline-success"
                                                 onclick="toggleCheckin({{ participant.id }})"
                                                 title="Check In">
                                             <i class="bi bi-person-plus"></i>
@@ -728,17 +805,16 @@
         </div>
     </div>
 </form>
-{% endif %}
 
 {% if not participants %}
 <div class="text-center py-5">
     <div style="font-size: 4rem; color: #d1d5db; margin-bottom: 1.5rem;">
         <i class="bi bi-people"></i>
     </div>
-    <h3 class="mb-3" style="color: #6b7280;">No participants yet</h3>
-    <p class="text-muted mb-4">
+    <h3 class="mb-3" style="color: var(--text-secondary);">No participants yet</h3>
+    <p class="text-muted">
         {% if current_user.is_authenticated and current_user.is_admin() %}
-            Add participants manually above or <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="text-primary text-decoration-none fw-bold">upload a CSV file</a>.
+            Add participants manually above or <a href="{{ url_for('upload_participants', event_id=event_id) }}" class="text-primary text-decoration-none fw-bold">upload a CSV file</a>.
         {% else %}
             Participants will appear here once added by administrators.
         {% endif %}
@@ -829,7 +905,7 @@ function resendCertificate(participantId, participantName) {
                     <div class="card shadow-lg" style="border-left: 4px solid #10b981;">
                         <div class="card-body p-3 d-flex align-items-center">
                             <i class="bi bi-check-circle-fill text-success me-2 fs-5"></i>
-                            <span class="fw-semibold">Certificate resent to ${participantName}!</span>
+                            <span class="fw-semibold ms-2">Certificate resent to ${participantName}!</span>
                         </div>
                     </div>
                 `;
@@ -877,9 +953,18 @@ function toggleSelectAll() {
 
 document.getElementById('selectAll').addEventListener('change', function() {
     const checkboxes = document.querySelectorAll('.participant-checkbox');
-    checkboxes.forEach(cb => {
-        cb.checked = this.checked;
-    });
+    const checkedBoxes = document.querySelectorAll('.participant-checkbox:checked');
+    const selectAll = document.getElementById('selectAll');
+
+    if (checkedBoxes.length === 0) {
+        selectAll.indeterminate = false;
+        selectAll.checked = false;
+    } else if (checkedBoxes.length === allCheckboxes.length) {
+        selectAll.indeterminate = false;
+        selectAll.checked = true;
+    } else {
+        selectAll.indeterminate = true;
+    }
 });
 
 // Update select all state when individual checkboxes change
@@ -909,11 +994,11 @@ function confirmBulkAction(action) {
         return false;
     }
 
-    const actionText = action.charAt(0).toUpperCase() + action.slice(1);
     if (action === 'delete') {
         return confirm(`Are you sure you want to ${action} ${selectedBoxes.length} selected participants? This action cannot be undone.`);
     }
-    return confirm(`${actionText} ${selectedBoxes.length} selected participants?`);
+
+    return confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${selectedBoxes.length} selected participants?`);
 }
 
 // Delete event confirmation
