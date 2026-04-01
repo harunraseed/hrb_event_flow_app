@@ -205,6 +205,14 @@ def ist_ist_time_filter(value, format_str='%B %d, %Y at %I:%M %p'):
             return value.strftime('%Y-%m-%d %H:%M')
         return str(value)
 
+@app.template_filter('has_attr')
+def has_attr_filter(obj, attr_name):
+    """Check if an object has an attribute. Returns False if attribute doesn't exist or raises AttributeError."""
+    try:
+        return getattr(obj, attr_name) is not None
+    except AttributeError:
+        return False
+
 # Initialize quiz stats collector
 quiz_stats = QuizStatsCollector(quiz_performance.redis_client)
 
@@ -349,7 +357,6 @@ class CreateEventForm(FlaskForm):
     community = StringField('Community / Organization', validators=[Optional(), Length(max=100)])
     speakers = TextAreaField('Speakers', validators=[Optional()])
     event_official_link = StringField('Event Official Link', validators=[Optional(), URL()])
-    instructions = TextAreaField('Instructions', validators=[Optional()])
     submit = SubmitField('Create Event')
 
 class EditParticipantForm(FlaskForm):
@@ -1808,8 +1815,7 @@ def create_event():
                 organizer_name=form.organizer_name.data,
                 community=form.community.data,
                 speakers=form.speakers.data,
-                event_official_link=form.event_official_link.data,
-                instructions=form.instructions.data
+                event_official_link=form.event_official_link.data
             )
             
             db.session.add(event)

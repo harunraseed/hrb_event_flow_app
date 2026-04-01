@@ -307,7 +307,7 @@
                                 <span class="ms-2">|</span>
                                 <i class="bi bi-clock"></i>
                                 <span>{{ event.time|ist_ist_time('%I:%M %p') }}</span>
-                                {% if event.event_end_time %}
+                                {% if event|has_attr('event_end_time') and event.event_end_time %}
                                     <span>-</span>
                                     <span>{{ event.event_end_time|ist_ist_time('%I:%M %p') }}</span>
                                 {% endif %}
@@ -331,13 +331,13 @@
                                     {{ event.location[:50] }}{% if event.location|length > 50 %}...{% endif %}
                                 </div>
                             {% endif %}
-                            {% if event.organizer_name %}
+                            {% if event|has_attr('organizer_name') and event.organizer_name %}
                                 <div class="event-card-meta-item">
                                     <i class="bi bi-person-badge"></i>
                                     {{ event.organizer_name[:30] }}{% if event.organizer_name|length > 30 %}...{% endif %}
                                 </div>
                             {% endif %}
-                            {% if event.community %}
+                            {% if event|has_attr('community') and event.community %}
                                 <div class="event-card-meta-item">
                                     <i class="bi bi-building"></i>
                                     {{ event.community[:30] }}{% if event.community|length > 30 %}...{% endif %}
@@ -364,7 +364,7 @@
                             <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm">
                                 <i class="bi bi-download me-1"></i> Export
                             </a>
-                            {% if event.event_official_link %}
+                            {% if event|has_attr('event_official_link') and event.event_official_link %}
                                 <a href="{{ event.event_official_link }}" target="_blank" class="btn btn-outline-info btn-sm" title="Visit Event Page">
                                     <i class="bi bi-box-arrow-up-right"></i>
                                 </a>

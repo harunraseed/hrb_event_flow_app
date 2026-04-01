@@ -620,28 +620,6 @@
                         {% endif %}
                     </div>
 
-                    <!-- Instructions -->
-                    <div class="form-group">
-                        <label class="form-label" for="{{ form.instructions.id }}">
-                            <i class="bi bi-list-task"></i>
-                            {{ form.instructions.label.text }}
-                        </label>
-                        {{ form.instructions(class="form-control" + (" is-invalid" if form.instructions.errors else ""),
-                                       rows="4",
-                                       placeholder="Add detailed instructions for participants...") }}
-                        {% if form.instructions.errors %}
-                            <div class="invalid-feedback">
-                                {% for error in form.instructions.errors %}
-                                    <div><i class="bi bi-exclamation-triangle me-1"></i> {{ error }}</div>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-text">
-                            <i class="bi bi-info-circle"></i>
-                            Add detailed instructions (agenda, what to bring, parking info, dress code, etc.)
-                        </div>
-                    </div>
-
                     <!-- Submit Buttons -->
                     <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-submit">
