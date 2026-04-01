@@ -555,11 +555,14 @@ class Participant(db.Model):
     ticket_number = db.Column(db.String(50), unique=True, nullable=False)
     checked_in = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
-    
+
     # Email tracking
     email_sent = db.Column(db.Boolean, default=False)
     email_sent_date = db.Column(db.DateTime)
-    
+
+    # Certificates relationship
+    certificates = db.relationship('Certificate', backref='participant', lazy=True)
+
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
@@ -1900,23 +1903,49 @@ def upload_participants(event_id):
 @require_admin
 def event_dashboard(event_id):
     event = Event.query.get_or_404(event_id)
-    participants = Participant.query.options(db.joinedload(Participant.certificates)).filter_by(event_id=event_id).all()
-    
-    # Calculate email sent count
+
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    # Query participants with pagination - load certificates eagerly to avoid N+1 queries
+    participants_query = Participant.query.options(db.joinedload(Participant.certificates)).filter_by(event_id=event_id)
+
+    # Get paginated results
+    pagination = participants_query.order_by(Participant.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    participants = pagination.items
+
+    # Get total count for stats (single query instead of counting paginated items)
+    total_count = participants_query.count()
+
+    # Calculate stats from loaded data (avoid additional DB queries)
     emails_sent = sum(1 for p in participants if p.email_sent)
-    
-    # Calculate certificate issued count
-    certificates_issued = Certificate.query.filter_by(event_id=event_id).count()
-    
+    checked_in = sum(1 for p in participants if p.checked_in)
+    # Calculate certificate issued count from loaded participants (no extra query)
+    certificates_issued = sum(1 for p in participants if p.certificates)
+
     stats = {
-        'total': len(participants),
-        'checked_in': sum(1 for p in participants if p.checked_in),
-        'pending': sum(1 for p in participants if not p.checked_in),
+        'total': total_count,
+        'checked_in': checked_in,
+        'pending': total_count - checked_in,
         'emails_sent': emails_sent,
-        'certificates_issued': certificates_issued
+        'certificates_issued': certificates_issued,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': pagination.pages,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev
     }
-    
-    return render_template('event_dashboard.html', event=event, participants=participants, stats=stats)
+
+    return render_template(
+        'event_dashboard.html',
+        event=event,
+        participants=participants,
+        stats=stats,
+        pagination=pagination
+    )
 
 @app.route('/event/<int:event_id>/delete', methods=['POST'])
 @require_approval_for_action('delete_event')
