@@ -2,6 +2,7 @@
 import sys
 from datetime import datetime, timezone, timedelta
 from functools import wraps
+import json
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
@@ -146,15 +147,63 @@ def rank_time_filter(seconds):
     """Format time for ranking display with appropriate precision"""
     if seconds is None:
         return "N/A"
-    
+
     milliseconds = seconds * 1000
-    
+
     if milliseconds < 100:  # Very fast - show microseconds
         return f"{milliseconds:.3f}ms"
     elif milliseconds < 1000:  # Fast - show milliseconds
-        return f"{milliseconds:.1f}ms" 
+        return f"{milliseconds:.1f}ms"
     else:  # Slower - show seconds with 3 decimal places
         return f"{seconds:.3f}s"
+
+@app.template_filter('ist_datetime')
+def ist_datetime_filter(dt):
+    """Format datetime to IST (Indian Standard Time)"""
+    if dt is None:
+        return "N/A"
+
+    # Add IST timezone offset (UTC+5:30)
+    from datetime import timedelta
+    ist_offset = timedelta(hours=5, minutes=30)
+
+    try:
+        if dt.tzinfo:
+            # If datetime is timezone-aware, convert to UTC first then add IST
+            utc_dt = dt.astimezone(timezone.utc)
+            ist_dt = utc_dt + ist_offset
+        else:
+            # Naive datetime, assume UTC and add IST
+            ist_dt = dt + ist_offset
+
+        # Format as per user preference
+        return ist_dt.strftime('%B %d, %Y at %I:%M %p')
+    except Exception as e:
+        print(f"Error formatting datetime to IST: {e}")
+        return dt.strftime('%Y-%m-%d %H:%M')
+
+@app.template_filter('ist_ist_time')
+def ist_ist_time_filter(value, format_str='%B %d, %Y at %I:%M %p'):
+    """Format date/time objects to IST with custom format"""
+    if value is None:
+        return "N/A"
+
+    from datetime import timedelta
+    ist_offset = timedelta(hours=5, minutes=30)
+
+    try:
+        if value.tzinfo:
+            utc_dt = value.astimezone(timezone.utc)
+            ist_dt = utc_dt + ist_offset
+        else:
+            ist_dt = value + ist_offset
+
+        return ist_dt.strftime(format_str)
+    except Exception as e:
+        print(f"Error formatting datetime to IST: {e}")
+        if hasattr(value, 'strftime'):
+            return value.strftime('%Y-%m-%d %H:%M')
+        return str(value)
 
 # Initialize quiz stats collector
 quiz_stats = QuizStatsCollector(quiz_performance.redis_client)
@@ -291,11 +340,15 @@ class CreateEventForm(FlaskForm):
     alias_name = StringField('Alias Name', validators=[Optional(), Length(max=50)])
     date = DateField('Event Date', validators=[DataRequired()])
     time = TimeField('Event Time', validators=[Optional()])
+    event_end_time = TimeField('Event End Time', validators=[Optional()])
     logo = FileField('Event Logo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
     location = TextAreaField('Location', validators=[Optional()])
     google_maps_url = StringField('Google Maps URL', validators=[Optional(), URL()])
     description = TextAreaField('Description', validators=[Optional()])
     organizer_name = StringField('Organizer Name', validators=[Optional(), Length(max=200)])
+    community = StringField('Community / Organization', validators=[Optional(), Length(max=100)])
+    speakers = TextAreaField('Speakers', validators=[Optional()])
+    event_official_link = StringField('Event Official Link', validators=[Optional(), URL()])
     instructions = TextAreaField('Instructions', validators=[Optional()])
     submit = SubmitField('Create Event')
 
@@ -437,12 +490,15 @@ class Event(db.Model):
     alias_name = db.Column(db.String(50))  # For ticket numbering
     date = db.Column(db.Date, nullable=False)
     time = db.Column(db.Time)  # Event start time
+    event_end_time = db.Column(db.Time)  # Event end time
     logo = db.Column(db.Text)  # Logo as base64 string
     location = db.Column(db.Text)  # Event location
     google_maps_url = db.Column(db.Text)  # Google Maps link
     description = db.Column(db.Text)
     organizer_name = db.Column(db.String(200))  # Organizer name
-    instructions = db.Column(db.Text)  # Detailed instructions
+    community = db.Column(db.String(100))  # Community/Organization
+    speakers = db.Column(db.Text)  # Speakers (stored as JSON string)
+    event_official_link = db.Column(db.Text)  # Event official website link
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     participants = db.relationship('Participant', backref='event', lazy=True, cascade='all, delete-orphan')
 
@@ -1744,11 +1800,15 @@ def create_event():
                 alias_name=form.alias_name.data,
                 date=form.date.data,
                 time=form.time.data,
+                event_end_time=form.event_end_time.data,
                 logo=logo_url,
                 location=form.location.data,
                 google_maps_url=form.google_maps_url.data,
                 description=form.description.data,
                 organizer_name=form.organizer_name.data,
+                community=form.community.data,
+                speakers=form.speakers.data,
+                event_official_link=form.event_official_link.data,
                 instructions=form.instructions.data
             )
             
