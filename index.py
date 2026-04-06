@@ -159,46 +159,70 @@ def rank_time_filter(seconds):
 
 @app.template_filter('ist_datetime')
 def ist_datetime_filter(dt):
-    """Format datetime to IST (Indian Standard Time)"""
+    """Format datetime to IST (Indian Standard Time).
+    Handles datetime, date, and time objects gracefully."""
     if dt is None:
         return "N/A"
 
-    # Add IST timezone offset (UTC+5:30)
+    import datetime as dt_module
     from datetime import timedelta
     ist_offset = timedelta(hours=5, minutes=30)
 
     try:
-        if dt.tzinfo:
-            # If datetime is timezone-aware, convert to UTC first then add IST
-            utc_dt = dt.astimezone(timezone.utc)
-            ist_dt = utc_dt + ist_offset
-        else:
-            # Naive datetime, assume UTC and add IST
-            ist_dt = dt + ist_offset
+        # Pure date object — no timezone conversion needed
+        if isinstance(dt, dt_module.date) and not isinstance(dt, dt_module.datetime):
+            return dt.strftime('%B %d, %Y')
 
-        # Format as per user preference
-        return ist_dt.strftime('%B %d, %Y at %I:%M %p')
+        # Pure time object — no timezone conversion possible
+        if isinstance(dt, dt_module.time):
+            return dt.strftime('%I:%M %p')
+
+        # datetime object
+        if isinstance(dt, dt_module.datetime):
+            if dt.tzinfo:
+                utc_dt = dt.astimezone(timezone.utc)
+                ist_dt = utc_dt + ist_offset
+            else:
+                ist_dt = dt + ist_offset
+            return ist_dt.strftime('%B %d, %Y at %I:%M %p')
+
+        return str(dt)
     except Exception as e:
         print(f"Error formatting datetime to IST: {e}")
-        return dt.strftime('%Y-%m-%d %H:%M')
+        if hasattr(dt, 'strftime'):
+            return dt.strftime('%Y-%m-%d %H:%M')
+        return str(dt)
 
 @app.template_filter('ist_ist_time')
 def ist_ist_time_filter(value, format_str='%B %d, %Y at %I:%M %p'):
-    """Format date/time objects to IST with custom format"""
+    """Format date/time/datetime objects to IST with custom format.
+    Handles datetime, date, and time objects gracefully."""
     if value is None:
         return "N/A"
 
+    import datetime as dt_module
     from datetime import timedelta
     ist_offset = timedelta(hours=5, minutes=30)
 
     try:
-        if value.tzinfo:
-            utc_dt = value.astimezone(timezone.utc)
-            ist_dt = utc_dt + ist_offset
-        else:
-            ist_dt = value + ist_offset
+        # Pure date object — format directly, no timezone conversion
+        if isinstance(value, dt_module.date) and not isinstance(value, dt_module.datetime):
+            return value.strftime(format_str)
 
-        return ist_dt.strftime(format_str)
+        # Pure time object — format directly, no timezone math
+        if isinstance(value, dt_module.time):
+            return value.strftime(format_str)
+
+        # datetime object — apply IST offset
+        if isinstance(value, dt_module.datetime):
+            if value.tzinfo:
+                utc_dt = value.astimezone(timezone.utc)
+                ist_dt = utc_dt + ist_offset
+            else:
+                ist_dt = value + ist_offset
+            return ist_dt.strftime(format_str)
+
+        return str(value)
     except Exception as e:
         print(f"Error formatting datetime to IST: {e}")
         if hasattr(value, 'strftime'):
@@ -313,6 +337,9 @@ def send_ticket_email(participant, event):
         
         subject = f"Registration Confirmation - Your Ticket for {event.name}"
         
+        # Generate Google Calendar URL
+        calendar_url = generate_google_calendar_url(event, participant)
+        
         # Create message with explicit sender
         msg = Message(
             subject=subject,
@@ -320,8 +347,20 @@ def send_ticket_email(participant, event):
             recipients=[participant.email],
             html=render_template('email/ticket_email.html', 
                                event=event, 
-                               participant=participant)
+                               participant=participant,
+                               calendar_url=calendar_url)
         )
+        
+        # Attach .ics calendar file
+        try:
+            ics_content = generate_ics_content(event, participant)
+            msg.attach(
+                f"{event.name.replace(' ', '_')}_ticket.ics",
+                "text/calendar",
+                ics_content
+            )
+        except Exception as ics_err:
+            print(f"⚠️ Could not attach .ics file: {ics_err}")
         
         print(f"📧 Sending email to {participant.email}")
         print(f"🔗 SMTP: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
@@ -339,6 +378,197 @@ def send_ticket_email(participant, event):
         
     except Exception as e:
         print(f"❌ Failed to send email to {participant.email}: {str(e)}")
+        print(f"🔍 Error type: {type(e).__name__}")
+        return False
+
+
+def generate_google_calendar_url(event, participant=None):
+    """Generate a Google Calendar 'Add to Calendar' URL for an event."""
+    from urllib.parse import quote
+    
+    # Build date/time strings
+    event_date = event.date  # datetime.date
+    
+    if event.time:
+        # Combine date + time for start
+        start_dt = datetime.combine(event_date, event.time)
+    else:
+        # All-day event fallback: start at 09:00
+        start_dt = datetime.combine(event_date, datetime.strptime('09:00', '%H:%M').time())
+    
+    if event.event_end_time:
+        end_dt = datetime.combine(event_date, event.event_end_time)
+        # Handle end time before start time (crosses midnight)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+    else:
+        # Default: 2 hours after start
+        end_dt = start_dt + timedelta(hours=2)
+    
+    # Format as Google Calendar expects: YYYYMMDDTHHmmSSZ (UTC)
+    # We treat the times as IST (UTC+5:30), convert to UTC for the URL
+    ist_offset = timedelta(hours=5, minutes=30)
+    start_utc = start_dt - ist_offset
+    end_utc = end_dt - ist_offset
+    
+    date_fmt = '%Y%m%dT%H%M%SZ'
+    dates_str = f"{start_utc.strftime(date_fmt)}/{end_utc.strftime(date_fmt)}"
+    
+    # Build details
+    title = event.name
+    details_parts = []
+    if participant:
+        details_parts.append(f"Ticket: {participant.ticket_number}")
+        details_parts.append(f"Participant: {participant.name}")
+    if event.description:
+        details_parts.append(f"\n{event.description}")
+    if event.organizer_name:
+        details_parts.append(f"\nOrganized by: {event.organizer_name}")
+    if event.event_official_link:
+        details_parts.append(f"\nEvent Link: {event.event_official_link}")
+    details = '\n'.join(details_parts)
+    
+    location = event.location or ''
+    
+    url = (
+        f"https://www.google.com/calendar/render?action=TEMPLATE"
+        f"&text={quote(title)}"
+        f"&dates={dates_str}"
+        f"&details={quote(details)}"
+        f"&location={quote(location)}"
+        f"&sf=true&output=xml"
+    )
+    return url
+
+
+def generate_ics_content(event, participant=None):
+    """Generate .ics (iCalendar) file content for the event."""
+    event_date = event.date
+    
+    if event.time:
+        start_dt = datetime.combine(event_date, event.time)
+    else:
+        start_dt = datetime.combine(event_date, datetime.strptime('09:00', '%H:%M').time())
+    
+    if event.event_end_time:
+        end_dt = datetime.combine(event_date, event.event_end_time)
+        if end_dt <= start_dt:
+            end_dt += timedelta(days=1)
+    else:
+        end_dt = start_dt + timedelta(hours=2)
+    
+    # Convert IST to UTC
+    ist_offset = timedelta(hours=5, minutes=30)
+    start_utc = start_dt - ist_offset
+    end_utc = end_dt - ist_offset
+    
+    date_fmt = '%Y%m%dT%H%M%SZ'
+    now_utc = datetime.now(timezone.utc).strftime(date_fmt)
+    
+    description = f"Event: {event.name}"
+    if participant:
+        description += f"\\nTicket: {participant.ticket_number}"
+        description += f"\\nParticipant: {participant.name}"
+    if event.description:
+        description += f"\\n\\n{event.description}"
+    if event.organizer_name:
+        description += f"\\nOrganized by: {event.organizer_name}"
+    
+    uid = f"event-{event.id}-{participant.id if participant else 0}@eventflow"
+    
+    ics = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//EventFlow//Ticket//EN\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "METHOD:PUBLISH\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{uid}\r\n"
+        f"DTSTART:{start_utc.strftime(date_fmt)}\r\n"
+        f"DTEND:{end_utc.strftime(date_fmt)}\r\n"
+        f"DTSTAMP:{now_utc}\r\n"
+        f"SUMMARY:{event.name}\r\n"
+        f"DESCRIPTION:{description}\r\n"
+        f"LOCATION:{event.location or ''}\r\n"
+        "BEGIN:VALARM\r\n"
+        "TRIGGER:-PT1H\r\n"
+        "ACTION:DISPLAY\r\n"
+        f"DESCRIPTION:Reminder: {event.name} starts in 1 hour\r\n"
+        "END:VALARM\r\n"
+        "BEGIN:VALARM\r\n"
+        "TRIGGER:-P1D\r\n"
+        "ACTION:DISPLAY\r\n"
+        f"DESCRIPTION:Reminder: {event.name} is tomorrow\r\n"
+        "END:VALARM\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    return ics
+
+
+def send_reminder_email(participant, event, is_tomorrow=False):
+    """Send event reminder email to a participant.
+    
+    Args:
+        participant: Participant object
+        event: Event object
+        is_tomorrow: True if event is tomorrow, False for general upcoming reminder
+    """
+    try:
+        print(f"🔔 Preparing reminder email for {participant.email}")
+        
+        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
+        missing_configs = [config for config in required_configs if not app.config.get(config)]
+        if missing_configs:
+            raise Exception(f"Missing email configuration: {', '.join(missing_configs)}")
+        
+        # Determine the subject and context
+        if is_tomorrow:
+            subject = f"🔔 Reminder: {event.name} is Tomorrow!"
+            reminder_type = 'tomorrow'
+        else:
+            # Calculate days until event
+            from datetime import date as date_type
+            today = date_type.today()
+            days_until = (event.date - today).days
+            if days_until == 0:
+                subject = f"🔔 Reminder: {event.name} is Today!"
+                reminder_type = 'today'
+            elif days_until == 1:
+                subject = f"🔔 Reminder: {event.name} is Tomorrow!"
+                reminder_type = 'tomorrow'
+            else:
+                subject = f"🔔 Upcoming Event: {event.name} on {event.date.strftime('%B %d, %Y')}"
+                reminder_type = 'upcoming'
+        
+        # Generate calendar URL
+        calendar_url = generate_google_calendar_url(event, participant)
+        
+        msg = Message(
+            subject=subject,
+            sender=app.config['MAIL_DEFAULT_SENDER'],
+            recipients=[participant.email],
+            html=render_template('email/reminder_email.html',
+                               event=event,
+                               participant=participant,
+                               reminder_type=reminder_type,
+                               calendar_url=calendar_url)
+        )
+        
+        # Attach .ics file
+        ics_content = generate_ics_content(event, participant)
+        msg.attach(
+            f"{event.name.replace(' ', '_')}.ics",
+            "text/calendar",
+            ics_content
+        )
+        
+        mail.send(msg)
+        print(f"✅ Reminder sent to {participant.email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send reminder to {participant.email}: {str(e)}")
         print(f"🔍 Error type: {type(e).__name__}")
         return False
 
@@ -443,6 +673,31 @@ class QuizUploadForm(FlaskForm):
                         validators=[DataRequired(), FileAllowed(['csv'], 'CSV files only!')],
                         render_kw={"accept": ".csv"})
     submit = SubmitField('Upload Questions')
+
+
+# Speaker Forms
+class SpeakerForm(FlaskForm):
+    name = StringField('Full Name', validators=[DataRequired(), Length(min=1, max=200)])
+    email = StringField('Email', validators=[DataRequired(), Email(), Length(max=200)])
+    mobile = StringField('Mobile Number', validators=[Optional(), Length(max=20)])
+    organization = StringField('Organization', validators=[Optional(), Length(max=200)])
+    designation = StringField('Designation / Title', validators=[Optional(), Length(max=200)])
+    bio = TextAreaField('Bio', validators=[Optional()])
+    photo = FileField('Profile Photo', validators=[Optional(), FileAllowed(['jpg', 'jpeg', 'png', 'gif'], 'Images only!')])
+    linkedin_url = StringField('LinkedIn URL', validators=[Optional(), URL(), Length(max=500)])
+    twitter_url = StringField('Twitter / X URL', validators=[Optional(), URL(), Length(max=500)])
+    github_url = StringField('GitHub URL', validators=[Optional(), URL(), Length(max=500)])
+    website_url = StringField('Website URL', validators=[Optional(), URL(), Length(max=500)])
+    availability = SelectField('Availability', choices=[
+        ('both', 'Online & Offline'),
+        ('online', 'Online Only'),
+        ('offline', 'Offline Only')
+    ], default='both')
+    expertise = StringField('Expertise / Topics', validators=[Optional(), Length(max=500)])
+    notes = TextAreaField('Internal Notes', validators=[Optional()])
+    is_active = BooleanField('Active Speaker', default=True)
+    submit = SubmitField('Save Speaker')
+
 
 # Authentication Forms
 class LoginForm(FlaskForm):
@@ -561,7 +816,7 @@ class Participant(db.Model):
     email_sent_date = db.Column(db.DateTime)
 
     # Certificates relationship
-    certificates = db.relationship('Certificate', backref='participant', lazy=True)
+    certificates = db.relationship('Certificate', backref='participant', lazy=True, cascade='all, delete-orphan')
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -606,7 +861,6 @@ class Certificate(db.Model):
     
     # Relationships
     event = db.relationship('Event', backref='certificates')
-    participant = db.relationship('Participant', backref=db.backref('certificates', cascade='all, delete-orphan'))
     
     def __repr__(self):
         return f'<Certificate {self.certificate_number}>'
@@ -857,6 +1111,70 @@ class EventFeedback(db.Model):
     
     def __repr__(self):
         return f'<EventFeedback {self.rating} stars for {self.event.name}>'
+
+
+# ═══ Speaker Management Models ═══
+
+# Association table: speakers ↔ events (many-to-many)
+speaker_events = db.Table('speaker_events',
+    db.Column('speaker_id', db.Integer, db.ForeignKey('speakers.id'), primary_key=True),
+    db.Column('event_id', db.Integer, db.ForeignKey('events.id'), primary_key=True),
+    db.Column('session_title', db.String(300)),
+    db.Column('session_type', db.String(50)),   # keynote, workshop, talk, panel
+    db.Column('created_at', db.DateTime, default=lambda: datetime.now(timezone.utc))
+)
+
+
+class Speaker(db.Model):
+    __tablename__ = 'speakers'
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Core info
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200), unique=True, nullable=False)
+    mobile = db.Column(db.String(20))
+    
+    # Professional
+    organization = db.Column(db.String(200))
+    designation = db.Column(db.String(200))
+    bio = db.Column(db.Text)
+    photo_url = db.Column(db.Text)  # profile photo URL
+    
+    # Social / links
+    linkedin_url = db.Column(db.String(500))
+    twitter_url = db.Column(db.String(500))
+    github_url = db.Column(db.String(500))
+    website_url = db.Column(db.String(500))
+    
+    # Availability
+    availability = db.Column(db.String(20), default='both')  # online, offline, both
+    
+    # Expertise / topics
+    expertise = db.Column(db.Text)  # comma-separated tags e.g. "Azure, AI, DevOps"
+    
+    # Stats (auto-updated)
+    total_sessions = db.Column(db.Integer, default=0)
+    
+    # Metadata
+    notes = db.Column(db.Text)  # internal notes
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
+                          onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    events = db.relationship('Event', secondary=speaker_events, lazy='subquery',
+                            backref=db.backref('event_speakers', lazy=True))
+    
+    def __repr__(self):
+        return f'<Speaker {self.name}>'
+    
+    def update_session_count(self):
+        """Recalculate total_sessions from the association table."""
+        self.total_sessions = db.session.query(speaker_events).filter(
+            speaker_events.c.speaker_id == self.id
+        ).count()
+
 
 # Authentication Models
 class User(UserMixin, db.Model):
@@ -1505,48 +1823,30 @@ def debug_db_schema():
 # Authentication Routes
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # If user is already logged in, redirect to dashboard
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
-    
+
     form = LoginForm()
-    
-    # Manual login bypass for debugging - check credentials directly
-    if request.method == 'POST' and not form.validate_on_submit():
-        # Try manual validation
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
-        
-        if username and password:
-            user = User.query.filter_by(username=username).first()
-            if user and user.check_password(password) and user.is_active:
-                login_user(user, remember=request.form.get('remember_me') == 'y')
-                user.last_login = datetime.now(timezone.utc)
-                db.session.commit()
-                flash(f'Welcome back, {user.username}!', 'success')
-                next_page = request.args.get('next')
-                return redirect(next_page) if next_page else redirect(url_for('admin_dashboard'))
-            else:
-                flash('Invalid username or password.', 'error')
-        else:
-            flash(f'Form validation failed: {form.errors}', 'error')
-    
+
+    # Process form submission
     if form.validate_on_submit():
         username = form.username.data.strip()
         user = User.query.filter_by(username=username).first()
-        
+
         if user and user.check_password(form.password.data) and user.is_active:
             login_user(user, remember=form.remember_me.data)
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
-            
+
             flash(f'Welcome back, {user.username}!', 'success')
-            
+
             # Redirect to next page or admin dashboard
             next_page = request.args.get('next')
             return redirect(next_page) if next_page else redirect(url_for('admin_dashboard'))
         else:
             flash('Invalid username or password.', 'error')
-    
+
     return render_template('auth/login.html', form=form)
 
 @app.route('/logout')
@@ -1839,6 +2139,63 @@ def event_created_success(event_id):
     event = Event.query.get_or_404(event_id)
     return render_template('event_created_success.html', event=event)
 
+
+@app.route('/event/<int:event_id>/edit', methods=['GET', 'POST'])
+@require_admin
+def edit_event(event_id):
+    """Edit an existing event's details."""
+    event = Event.query.get_or_404(event_id)
+    form = CreateEventForm(obj=event)
+    
+    if form.validate_on_submit():
+        try:
+            # Handle logo upload
+            if form.logo.data and hasattr(form.logo.data, 'filename') and form.logo.data.filename:
+                try:
+                    logo_url = storage_manager.save_image(form.logo.data, folder="logos")
+                    if logo_url:
+                        event.logo = logo_url
+                        flash('Logo updated successfully!', 'success')
+                    else:
+                        flash('Error uploading logo. Kept existing logo.', 'warning')
+                except Exception as e:
+                    flash(f'Error processing logo: {str(e)}', 'warning')
+            
+            # Update all fields
+            event.name = form.name.data
+            event.alias_name = form.alias_name.data
+            event.date = form.date.data
+            event.time = form.time.data
+            event.event_end_time = form.event_end_time.data
+            event.location = form.location.data
+            event.google_maps_url = form.google_maps_url.data
+            event.description = form.description.data
+            event.organizer_name = form.organizer_name.data
+            event.community = form.community.data
+            event.event_official_link = form.event_official_link.data
+            
+            # Handle speakers from dynamic form fields
+            speakers = []
+            for key in sorted(request.form.keys()):
+                if key.startswith('speaker_') and request.form[key].strip():
+                    speakers.append(request.form[key].strip())
+            if speakers:
+                event.speakers = '\n'.join(speakers)
+            elif form.speakers.data:
+                event.speakers = form.speakers.data
+            
+            db.session.commit()
+            flash(f'Event "{event.name}" updated successfully!', 'success')
+            return redirect(url_for('event_dashboard', event_id=event.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating event: {str(e)}', 'error')
+    
+    # Pre-populate community field for GET request
+    return render_template('edit_event.html', form=form, event=event)
+
+
 @app.route('/upload_participants/<int:event_id>', methods=['GET', 'POST'])
 @require_admin
 def upload_participants(event_id):
@@ -2003,7 +2360,7 @@ def delete_event(event_id):
 @require_approval_for_action('bulk_delete')
 def bulk_delete_participants_alt():
     """Delete multiple participants (alternative route)"""
-    participant_ids = request.form.getlist('participant_ids')
+    participant_ids = request.form.getlist('participant_ids') or request.form.getlist('selected_participants')
     if not participant_ids:
         flash('No participants selected for deletion!', 'warning')
         return redirect(request.referrer or url_for('index'))
@@ -2039,15 +2396,17 @@ def bulk_delete_participants_alt():
 def preview_ticket(participant_id):
     """Preview ticket email without sending"""
     participant = Participant.query.get_or_404(participant_id)
+    calendar_url = generate_google_calendar_url(participant.event, participant)
     return render_template('email/ticket_email.html', 
                          event=participant.event, 
-                         participant=participant)
+                         participant=participant,
+                         calendar_url=calendar_url)
 
 @app.route('/participants/bulk_resend', methods=['POST'])
 @require_admin
 def bulk_resend_tickets_alt():
     """Resend tickets to multiple participants (alternative route)"""
-    participant_ids = request.form.getlist('participant_ids')
+    participant_ids = request.form.getlist('participant_ids') or request.form.getlist('selected_participants')
     if not participant_ids:
         flash('No participants selected for ticket resend!', 'warning')
         return redirect(request.referrer or url_for('index'))
@@ -2313,7 +2672,24 @@ def event_stats_api(event_id):
 @require_admin
 def send_emails(event_id):
     event = Event.query.get_or_404(event_id)
-    participants = Participant.query.filter_by(event_id=event_id).all()
+    
+    # Check for selected participants from bulk form
+    selected_ids = request.form.getlist('selected_participants')
+    
+    if selected_ids:
+        # Cast to int — pg8000 is strict about integer vs varchar types
+        selected_ids_int = [int(sid) for sid in selected_ids if sid.isdigit()]
+        # Send only to selected participants
+        participants = Participant.query.filter(
+            Participant.id.in_(selected_ids_int),
+            Participant.event_id == event_id
+        ).all()
+        if not participants:
+            flash('No valid participants found in selection!', 'warning')
+            return redirect(url_for('event_dashboard', event_id=event_id))
+    else:
+        # No selection — send to ALL participants
+        participants = Participant.query.filter_by(event_id=event_id).all()
     
     try:
         if not participants:
@@ -2341,13 +2717,14 @@ def send_emails(event_id):
             try:
                 send_ticket_email(participant, event)
                 sent_count += 1
-                print(f"? Email sent to {participant.email}")
+                print(f"✅ Email sent to {participant.email}")
             except Exception as e:
                 error_count += 1
-                print(f"? Error sending email to {participant.email}: {e}")
+                print(f"❌ Error sending email to {participant.email}: {e}")
         
+        target = f"{len(selected_ids)} selected" if selected_ids else "all"
         if sent_count > 0:
-            flash(f'Emails sent successfully to {sent_count} participants!', 'success')
+            flash(f'Emails sent successfully to {sent_count} of {target} participants!', 'success')
         if error_count > 0:
             flash(f'Failed to send {error_count} emails. Check email configuration.', 'warning')
             
@@ -2876,6 +3253,326 @@ def send_emails_alt(event_id):
     """Send emails to all participants (alternative route called by template)."""
     return redirect(url_for('send_emails', event_id=event_id))
 
+
+@app.route('/event/<int:event_id>/send_reminder', methods=['POST'])
+@require_admin
+def send_reminder(event_id):
+    """Send reminder emails to all or selected participants."""
+    event = Event.query.get_or_404(event_id)
+    
+    # Check for selected participants
+    selected_ids = request.form.getlist('selected_participants')
+    
+    if selected_ids:
+        # Cast to int — pg8000 is strict about integer vs varchar types
+        selected_ids_int = [int(sid) for sid in selected_ids if sid.isdigit()]
+        participants = Participant.query.filter(
+            Participant.id.in_(selected_ids_int),
+            Participant.event_id == event_id
+        ).all()
+    else:
+        participants = Participant.query.filter_by(event_id=event_id).all()
+    
+    if not participants:
+        flash('No participants found to send reminders to!', 'warning')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    # Check mail configuration
+    if not app.config.get('MAIL_USERNAME'):
+        flash('Email not configured. Please set up email settings.', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    # Test connection
+    try:
+        test_email_connection()
+    except Exception as e:
+        flash(f'Email connection failed: {str(e)}', 'error')
+        return redirect(url_for('event_dashboard', event_id=event_id))
+    
+    # Determine if event is tomorrow
+    from datetime import date as date_type
+    today = date_type.today()
+    days_until = (event.date - today).days
+    is_tomorrow = (days_until == 1)
+    
+    sent_count = 0
+    error_count = 0
+    
+    for participant in participants:
+        try:
+            success = send_reminder_email(participant, event, is_tomorrow)
+            if success:
+                sent_count += 1
+            else:
+                error_count += 1
+        except Exception as e:
+            error_count += 1
+            print(f"❌ Reminder error for {participant.email}: {e}")
+    
+    target = f"{len(selected_ids)} selected" if selected_ids else "all"
+    if sent_count > 0:
+        flash(f'Reminder emails sent to {sent_count} of {target} participants!', 'success')
+    if error_count > 0:
+        flash(f'Failed to send {error_count} reminders.', 'warning')
+    
+    return redirect(url_for('event_dashboard', event_id=event_id))
+
+
+# ═══════════════════════════════════════════════════════════════
+# Speaker Management Routes
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/speakers')
+@require_admin
+def speaker_list():
+    """List all speakers with search & filter."""
+    q = request.args.get('q', '').strip()
+    availability = request.args.get('availability', '')
+    status = request.args.get('status', '')
+    
+    query = Speaker.query
+    
+    if q:
+        query = query.filter(
+            db.or_(
+                Speaker.name.ilike(f'%{q}%'),
+                Speaker.email.ilike(f'%{q}%'),
+                Speaker.organization.ilike(f'%{q}%'),
+                Speaker.expertise.ilike(f'%{q}%')
+            )
+        )
+    if availability:
+        query = query.filter(Speaker.availability == availability)
+    if status == 'active':
+        query = query.filter(Speaker.is_active == True)
+    elif status == 'inactive':
+        query = query.filter(Speaker.is_active == False)
+    
+    speakers = query.order_by(Speaker.name.asc()).all()
+    
+    # Stats
+    stats = {
+        'total': Speaker.query.count(),
+        'active': Speaker.query.filter_by(is_active=True).count(),
+        'online': Speaker.query.filter(Speaker.availability.in_(['online', 'both'])).count(),
+        'offline': Speaker.query.filter(Speaker.availability.in_(['offline', 'both'])).count(),
+    }
+    
+    return render_template('speakers/speaker_list.html',
+                         speakers=speakers, stats=stats,
+                         q=q, availability=availability, status=status)
+
+
+@app.route('/speakers/add', methods=['GET', 'POST'])
+@require_admin
+def speaker_add():
+    """Add a new speaker."""
+    form = SpeakerForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Check duplicate email
+            existing = Speaker.query.filter_by(email=form.email.data.strip()).first()
+            if existing:
+                flash(f'A speaker with email {form.email.data} already exists.', 'error')
+                return render_template('speakers/speaker_form.html', form=form, mode='add')
+            
+            # Handle photo upload
+            photo_url = None
+            if form.photo.data and hasattr(form.photo.data, 'filename') and form.photo.data.filename:
+                try:
+                    photo_url = storage_manager.save_image(form.photo.data, folder="speakers")
+                except Exception as e:
+                    flash(f'Error uploading photo: {str(e)}', 'warning')
+            
+            speaker = Speaker(
+                name=form.name.data.strip(),
+                email=form.email.data.strip(),
+                mobile=form.mobile.data.strip() if form.mobile.data else None,
+                organization=form.organization.data.strip() if form.organization.data else None,
+                designation=form.designation.data.strip() if form.designation.data else None,
+                bio=form.bio.data.strip() if form.bio.data else None,
+                photo_url=photo_url,
+                linkedin_url=form.linkedin_url.data.strip() if form.linkedin_url.data else None,
+                twitter_url=form.twitter_url.data.strip() if form.twitter_url.data else None,
+                github_url=form.github_url.data.strip() if form.github_url.data else None,
+                website_url=form.website_url.data.strip() if form.website_url.data else None,
+                availability=form.availability.data,
+                expertise=form.expertise.data.strip() if form.expertise.data else None,
+                notes=form.notes.data.strip() if form.notes.data else None,
+                is_active=form.is_active.data
+            )
+            
+            db.session.add(speaker)
+            db.session.commit()
+            flash(f'Speaker "{speaker.name}" added successfully!', 'success')
+            return redirect(url_for('speaker_detail', speaker_id=speaker.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding speaker: {str(e)}', 'error')
+    
+    return render_template('speakers/speaker_form.html', form=form, mode='add')
+
+
+@app.route('/speakers/<int:speaker_id>')
+@require_admin
+def speaker_detail(speaker_id):
+    """View speaker details and session history."""
+    speaker = Speaker.query.get_or_404(speaker_id)
+    
+    # Get sessions (events linked to this speaker) with session info
+    sessions = db.session.query(
+        speaker_events, Event
+    ).join(
+        Event, speaker_events.c.event_id == Event.id
+    ).filter(
+        speaker_events.c.speaker_id == speaker_id
+    ).order_by(Event.date.desc()).all()
+    
+    # All events for the assign dropdown
+    all_events = Event.query.order_by(Event.date.desc()).all()
+    
+    return render_template('speakers/speaker_detail.html',
+                         speaker=speaker, sessions=sessions, all_events=all_events)
+
+
+@app.route('/speakers/<int:speaker_id>/edit', methods=['GET', 'POST'])
+@require_admin
+def speaker_edit(speaker_id):
+    """Edit speaker details."""
+    speaker = Speaker.query.get_or_404(speaker_id)
+    form = SpeakerForm(obj=speaker)
+    
+    if form.validate_on_submit():
+        try:
+            # Check duplicate email (excluding current speaker)
+            existing = Speaker.query.filter(
+                Speaker.email == form.email.data.strip(),
+                Speaker.id != speaker_id
+            ).first()
+            if existing:
+                flash(f'Another speaker with email {form.email.data} already exists.', 'error')
+                return render_template('speakers/speaker_form.html', form=form, mode='edit', speaker=speaker)
+            
+            # Handle photo upload
+            if form.photo.data and hasattr(form.photo.data, 'filename') and form.photo.data.filename:
+                try:
+                    photo_url = storage_manager.save_image(form.photo.data, folder="speakers")
+                    if photo_url:
+                        speaker.photo_url = photo_url
+                except Exception as e:
+                    flash(f'Error uploading photo: {str(e)}', 'warning')
+            
+            speaker.name = form.name.data.strip()
+            speaker.email = form.email.data.strip()
+            speaker.mobile = form.mobile.data.strip() if form.mobile.data else None
+            speaker.organization = form.organization.data.strip() if form.organization.data else None
+            speaker.designation = form.designation.data.strip() if form.designation.data else None
+            speaker.bio = form.bio.data.strip() if form.bio.data else None
+            speaker.linkedin_url = form.linkedin_url.data.strip() if form.linkedin_url.data else None
+            speaker.twitter_url = form.twitter_url.data.strip() if form.twitter_url.data else None
+            speaker.github_url = form.github_url.data.strip() if form.github_url.data else None
+            speaker.website_url = form.website_url.data.strip() if form.website_url.data else None
+            speaker.availability = form.availability.data
+            speaker.expertise = form.expertise.data.strip() if form.expertise.data else None
+            speaker.notes = form.notes.data.strip() if form.notes.data else None
+            speaker.is_active = form.is_active.data
+            
+            db.session.commit()
+            flash(f'Speaker "{speaker.name}" updated successfully!', 'success')
+            return redirect(url_for('speaker_detail', speaker_id=speaker.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating speaker: {str(e)}', 'error')
+    
+    return render_template('speakers/speaker_form.html', form=form, mode='edit', speaker=speaker)
+
+
+@app.route('/speakers/<int:speaker_id>/delete', methods=['POST'])
+@require_admin
+def speaker_delete(speaker_id):
+    """Delete a speaker."""
+    speaker = Speaker.query.get_or_404(speaker_id)
+    name = speaker.name
+    
+    try:
+        db.session.delete(speaker)
+        db.session.commit()
+        flash(f'Speaker "{name}" deleted successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting speaker: {str(e)}', 'error')
+    
+    return redirect(url_for('speaker_list'))
+
+
+@app.route('/speakers/<int:speaker_id>/assign_event', methods=['POST'])
+@require_admin
+def speaker_assign_event(speaker_id):
+    """Assign a speaker to an event / session."""
+    speaker = Speaker.query.get_or_404(speaker_id)
+    
+    event_id = request.form.get('event_id')
+    session_title = request.form.get('session_title', '').strip()
+    session_type = request.form.get('session_type', 'talk').strip()
+    
+    if not event_id:
+        flash('Please select an event.', 'warning')
+        return redirect(url_for('speaker_detail', speaker_id=speaker_id))
+    
+    event = Event.query.get_or_404(int(event_id))
+    
+    try:
+        # Check if already assigned
+        existing = db.session.query(speaker_events).filter(
+            speaker_events.c.speaker_id == speaker_id,
+            speaker_events.c.event_id == int(event_id)
+        ).first()
+        
+        if existing:
+            flash(f'{speaker.name} is already assigned to "{event.name}".', 'warning')
+        else:
+            db.session.execute(speaker_events.insert().values(
+                speaker_id=speaker_id,
+                event_id=int(event_id),
+                session_title=session_title or event.name,
+                session_type=session_type
+            ))
+            speaker.update_session_count()
+            db.session.commit()
+            flash(f'{speaker.name} assigned to "{event.name}" successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error assigning speaker: {str(e)}', 'error')
+    
+    return redirect(url_for('speaker_detail', speaker_id=speaker_id))
+
+
+@app.route('/speakers/<int:speaker_id>/remove_event/<int:event_id>', methods=['POST'])
+@require_admin
+def speaker_remove_event(speaker_id, event_id):
+    """Remove a speaker from an event."""
+    speaker = Speaker.query.get_or_404(speaker_id)
+    
+    try:
+        db.session.execute(speaker_events.delete().where(
+            db.and_(
+                speaker_events.c.speaker_id == speaker_id,
+                speaker_events.c.event_id == event_id
+            )
+        ))
+        speaker.update_session_count()
+        db.session.commit()
+        flash('Speaker removed from event.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}', 'error')
+    
+    return redirect(url_for('speaker_detail', speaker_id=speaker_id))
+
+
 # Certificate Routes
 @app.route('/event/<int:event_id>/certificates')
 @require_admin
@@ -3148,12 +3845,6 @@ def delete_certificate_asset(event_id):
         db.session.rollback()
         print(f"❌ Error deleting certificate asset: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
-    else:
-        errors = []
-        for field, field_errors in form.errors.items():
-            for error in field_errors:
-                errors.append(f"{field}: {error}")
-        return jsonify({'status': 'error', 'message': f'Validation errors: {", ".join(errors)}'}), 400
 
 @app.route('/event/<int:event_id>/certificates/preview')
 def preview_certificate(event_id):
@@ -3671,10 +4362,6 @@ def generate_certificate_with_reportlab(participant, event, certificate):
         
     except Exception as e:
         print(f"❌ Certificate PDF generation failed: {str(e)[:100]}...")  # Limit error message length
-        return None
-        
-    except Exception as e:
-        print(f"❌ ReportLab PDF generation error: {str(e)[:100]}...")  # Limit error message length
         import traceback
         traceback.print_exc()
         return None

@@ -61,5 +61,8 @@ uploads/*
 # Logs
 *.log
 
+# GitHub Agents
+.github/agents/
+
 # Vercel
 .vercel/

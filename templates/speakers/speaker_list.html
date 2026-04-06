@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}Speakers - EventFlow{% endblock %}
+{% block head %}
+<style>
+.speakers-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 1.75rem 2rem;
+    margin-bottom: 1.5rem;
+}
+.speakers-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.speakers-header p { color: var(--text-secondary); margin: 0.25rem 0 0; font-size: 0.9rem; }
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 1.25rem;
+    text-align: center;
+    transition: all 0.2s;
+}
+.stat-card:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.stat-card .stat-value { font-size: 1.75rem; font-weight: 800; color: var(--text); }
+.stat-card .stat-label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .stat-icon { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 0.5rem; font-size: 1rem; }
+.stat-icon-blue { background: var(--brand-50); color: var(--primary); }
+.stat-icon-green { background: #f0fdf4; color: #16a34a; }
+.stat-icon-sky { background: #f0f9ff; color: #0ea5e9; }
+.stat-icon-amber { background: #fffbeb; color: #f59e0b; }
+
+.filter-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.speaker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.25rem;
+}
+.spk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 1.5rem;
+    transition: all 0.25s;
+    position: relative;
+}
+.spk-card:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+
+.spk-top { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.spk-avatar {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--brand-50); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.2rem; flex-shrink: 0;
+    border: 2px solid var(--brand-200);
+    overflow: hidden;
+}
+.spk-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.spk-name { font-weight: 700; font-size: 1rem; color: var(--text); margin: 0; }
+.spk-role { font-size: 0.8rem; color: var(--text-secondary); margin: 0; }
+.spk-org { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+
+.spk-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.75rem 0; }
+.spk-tag {
+    font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.55rem;
+    border-radius: 999px; background: var(--brand-50); color: var(--primary);
+    border: 1px solid var(--brand-200);
+}
+.spk-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.75rem; }
+.spk-meta i { margin-right: 0.2rem; }
+
+.spk-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);
+}
+.spk-sessions { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+.spk-sessions strong { color: var(--primary); }
+
+.spk-badge {
+    position: absolute; top: 1rem; right: 1rem;
+    font-size: 0.65rem; font-weight: 700; padding: 0.2rem 0.5rem;
+    border-radius: 999px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.spk-badge-active { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.spk-badge-inactive { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; }
+
+.avail-pill {
+    font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+}
+.avail-both { background: #f0fdf4; color: #16a34a; }
+.avail-online { background: #f0f9ff; color: #0ea5e9; }
+.avail-offline { background: #fffbeb; color: #f59e0b; }
+
+.empty-state {
+    text-align: center; padding: 4rem 2rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+}
+.empty-state i { font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem; display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="speakers-header">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <h1><i class="bi bi-mic-fill me-2" style="color:var(--primary);"></i>Speaker Database</h1>
+            <p>Manage your speaker roster and session assignments</p>
+        </div>
+        <a href="{{ url_for('speaker_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i> Add Speaker
+        </a>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-row">
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-blue"><i class="bi bi-people-fill"></i></div>
+        <div class="stat-value">{{ stats.total }}</div>
+        <div class="stat-label">Total Speakers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-green"><i class="bi bi-check-circle-fill"></i></div>
+        <div class="stat-value">{{ stats.active }}</div>
+        <div class="stat-label">Active</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-sky"><i class="bi bi-camera-video-fill"></i></div>
+        <div class="stat-value">{{ stats.online }}</div>
+        <div class="stat-label">Online Avail.</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-amber"><i class="bi bi-building"></i></div>
+        <div class="stat-value">{{ stats.offline }}</div>
+        <div class="stat-label">Offline Avail.</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+    <form method="GET" action="{{ url_for('speaker_list') }}">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0" style="border-radius:var(--r-lg) 0 0 var(--r-lg);"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" name="q" class="form-control border-start-0" value="{{ q }}"
+                           placeholder="Search name, email, org, expertise..."
+                           style="border-radius:0 var(--r-lg) var(--r-lg) 0;">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="availability" class="form-select">
+                    <option value="">All Availability</option>
+                    <option value="both" {{ 'selected' if availability == 'both' }}>Online & Offline</option>
+                    <option value="online" {{ 'selected' if availability == 'online' }}>Online Only</option>
+                    <option value="offline" {{ 'selected' if availability == 'offline' }}>Offline Only</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="status" class="form-select">
+                    <option value="">All Status</option>
+                    <option value="active" {{ 'selected' if status == 'active' }}>Active</option>
+                    <option value="inactive" {{ 'selected' if status == 'inactive' }}>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill"><i class="bi bi-funnel me-1"></i>Filter</button>
+                <a href="{{ url_for('speaker_list') }}" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Speaker Grid -->
+{% if speakers %}
+<div class="speaker-grid">
+    {% for speaker in speakers %}
+    <div class="spk-card">
+        <span class="spk-badge {{ 'spk-badge-active' if speaker.is_active else 'spk-badge-inactive' }}">
+            {{ 'Active' if speaker.is_active else 'Inactive' }}
+        </span>
+        <div class="spk-top">
+            <div class="spk-avatar">
+                {% if speaker.photo_url %}
+                    <img src="{{ speaker.photo_url }}" alt="{{ speaker.name }}">
+                {% else %}
+                    {{ speaker.name[0]|upper }}
+                {% endif %}
+            </div>
+            <div>
+                <h6 class="spk-name">
+                    <a href="{{ url_for('speaker_detail', speaker_id=speaker.id) }}" class="text-decoration-none" style="color:var(--text);">{{ speaker.name }}</a>
+                </h6>
+                {% if speaker.designation %}
+                <p class="spk-role">{{ speaker.designation }}</p>
+                {% endif %}
+                {% if speaker.organization %}
+                <p class="spk-org"><i class="bi bi-building me-1"></i>{{ speaker.organization }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if speaker.expertise %}
+        <div class="spk-tags">
+            {% for tag in speaker.expertise.split(',')[:4] %}
+                <span class="spk-tag">{{ tag.strip() }}</span>
+            {% endfor %}
+            {% if speaker.expertise.split(',')|length > 4 %}
+                <span class="spk-tag" style="background:#f1f5f9;color:var(--text-secondary);">+{{ speaker.expertise.split(',')|length - 4 }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="spk-meta">
+            <span><i class="bi bi-envelope"></i>{{ speaker.email }}</span>
+            {% if speaker.mobile %}
+            <span><i class="bi bi-phone"></i>{{ speaker.mobile }}</span>
+            {% endif %}
+            <span class="avail-pill avail-{{ speaker.availability }}">
+                <i class="bi {{ 'bi-globe' if speaker.availability == 'online' else 'bi-building' if speaker.availability == 'offline' else 'bi-arrows-angle-expand' }}"></i>
+                {{ speaker.availability|capitalize }}
+            </span>
+        </div>
+
+        <div class="spk-footer">
+            <span class="spk-sessions"><strong>{{ speaker.total_sessions }}</strong> session{{ 's' if speaker.total_sessions != 1 }}</span>
+            <div class="d-flex gap-1">
+                <a href="{{ url_for('speaker_detail', speaker_id=speaker.id) }}" class="btn btn-sm btn-outline-primary" title="View">
+                    <i class="bi bi-eye"></i>
+                </a>
+                <a href="{{ url_for('speaker_edit', speaker_id=speaker.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="bi bi-mic"></i>
+    <h4 class="fw-bold mb-2">No speakers found</h4>
+    <p class="text-muted mb-3">
+        {% if q or availability or status %}
+            No speakers match your search criteria. Try different filters.
+        {% else %}
+            Get started by adding your first speaker to the database.
+        {% endif %}
+    </p>
+    <a href="{{ url_for('speaker_add') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Add Speaker</a>
+</div>
+{% endif %}
+{% endblock %}

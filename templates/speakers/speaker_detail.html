@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% block title %}{{ speaker.name }} - Speaker - EventFlow{% endblock %}
+{% block head %}
+<style>
+.spk-profile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl); overflow: hidden;
+    animation: fadeIn 0.4s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.spk-profile-header {
+    padding: 2rem; display: flex; gap: 1.5rem; align-items: center;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.spk-profile-avatar {
+    width: 80px; height: 80px; border-radius: 50%; flex-shrink: 0;
+    background: var(--brand-50); color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; font-weight: 700; border: 3px solid var(--brand-200);
+    overflow: hidden;
+}
+.spk-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.spk-profile-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.spk-profile-role { font-size: 0.9rem; color: var(--text-secondary); margin: 0.15rem 0; }
+.spk-profile-org { font-size: 0.85rem; color: var(--text-muted); }
+.spk-profile-org i { margin-right: 0.25rem; }
+
+.spk-profile-badges { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.spk-badge-status {
+    font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.6rem;
+    border-radius: 999px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.badge-active { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.badge-inactive { background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; }
+.badge-avail {
+    font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.6rem;
+    border-radius: 999px; background: var(--brand-50); color: var(--primary); border: 1px solid var(--brand-200);
+}
+
+.spk-actions { margin-left: auto; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.spk-body { padding: 2rem; }
+
+.spk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.spk-section h5 {
+    font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--primary); margin-bottom: 1rem;
+    padding-bottom: 0.5rem; border-bottom: 2px solid var(--brand-100);
+    display: flex; align-items: center; gap: 0.5rem;
+}
+
+.info-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; font-size: 0.88rem; }
+.info-row .info-label { font-weight: 600; color: var(--text-secondary); min-width: 90px; }
+.info-row .info-value { color: var(--text); word-break: break-word; }
+.info-row .info-value a { color: var(--primary); text-decoration: none; }
+.info-row .info-value a:hover { text-decoration: underline; }
+
+.expertise-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.expertise-tag {
+    font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.6rem;
+    border-radius: 999px; background: var(--brand-50); color: var(--primary); border: 1px solid var(--brand-200);
+}
+
+.social-links { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.social-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: #f1f5f9; color: #64748b; font-size: 1rem;
+    transition: all 0.2s; text-decoration: none;
+}
+.social-link:hover { background: var(--primary); color: white; transform: translateY(-2px); }
+
+.bio-text { font-size: 0.9rem; color: var(--text); line-height: 1.7; white-space: pre-line; }
+.notes-text { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; white-space: pre-line; background: #f8fafc; padding: 1rem; border-radius: 0.75rem; }
+
+/* Sessions Section */
+.sessions-section {
+    margin-top: 2rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl); overflow: hidden;
+}
+.sessions-section-header {
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+}
+.sessions-section-header h4 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+.sessions-section-body { padding: 1.5rem; }
+
+.session-row {
+    display: flex; align-items: center; gap: 1rem; padding: 0.875rem 1rem;
+    border: 1px solid var(--border); border-radius: var(--r-lg);
+    margin-bottom: 0.75rem; transition: all 0.2s;
+}
+.session-row:hover { background: #f8fafc; }
+.session-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--brand-50); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.session-info { flex: 1; }
+.session-name { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.session-event { font-size: 0.78rem; color: var(--text-secondary); }
+.session-type {
+    font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.45rem;
+    border-radius: 999px; background: #f1f5f9; color: #64748b; text-transform: capitalize;
+}
+.session-date { font-size: 0.78rem; color: var(--text-secondary); }
+
+.assign-form {
+    background: #f8fafc; border-radius: var(--r-lg); padding: 1.25rem;
+    border: 1px dashed var(--border);
+}
+.assign-form h6 { font-size: 0.85rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--text); }
+
+.empty-sessions { text-align: center; padding: 2rem; color: var(--text-muted); }
+.empty-sessions i { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
+
+@media (max-width: 767.98px) {
+    .spk-grid { grid-template-columns: 1fr; }
+    .spk-profile-header { flex-direction: column; text-align: center; }
+    .spk-actions { margin-left: 0; justify-content: center; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Profile Card -->
+<div class="spk-profile">
+    <div class="spk-profile-header">
+        <div class="spk-profile-avatar">
+            {% if speaker.photo_url %}
+                <img src="{{ speaker.photo_url }}" alt="{{ speaker.name }}">
+            {% else %}
+                {{ speaker.name[0]|upper }}
+            {% endif %}
+        </div>
+        <div>
+            <h2 class="spk-profile-name">{{ speaker.name }}</h2>
+            {% if speaker.designation %}
+            <p class="spk-profile-role">{{ speaker.designation }}</p>
+            {% endif %}
+            {% if speaker.organization %}
+            <p class="spk-profile-org"><i class="bi bi-building"></i>{{ speaker.organization }}</p>
+            {% endif %}
+            <div class="spk-profile-badges">
+                <span class="spk-badge-status {{ 'badge-active' if speaker.is_active else 'badge-inactive' }}">
+                    {{ 'Active' if speaker.is_active else 'Inactive' }}
+                </span>
+                <span class="badge-avail">
+                    <i class="bi {{ 'bi-globe' if speaker.availability == 'online' else 'bi-building' if speaker.availability == 'offline' else 'bi-arrows-angle-expand' }} me-1"></i>
+                    {{ speaker.availability|capitalize }}
+                </span>
+                <span class="badge-avail"><i class="bi bi-calendar-check me-1"></i>{{ speaker.total_sessions }} session{{ 's' if speaker.total_sessions != 1 }}</span>
+            </div>
+        </div>
+        <div class="spk-actions">
+            <a href="{{ url_for('speaker_edit', speaker_id=speaker.id) }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-pencil me-1"></i>Edit
+            </a>
+            <form method="POST" action="{{ url_for('speaker_delete', speaker_id=speaker.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Delete speaker {{ speaker.name|replace("'", "\\'") }}? This cannot be undone.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3 me-1"></i>Delete</button>
+            </form>
+            <a href="{{ url_for('speaker_list') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Back
+            </a>
+        </div>
+    </div>
+
+    <div class="spk-body">
+        <div class="spk-grid">
+            <!-- Left Column -->
+            <div class="spk-section">
+                <h5><i class="bi bi-person-vcard"></i> Contact Details</h5>
+                <div class="info-row">
+                    <span class="info-label">Email</span>
+                    <span class="info-value"><a href="mailto:{{ speaker.email }}">{{ speaker.email }}</a></span>
+                </div>
+                {% if speaker.mobile %}
+                <div class="info-row">
+                    <span class="info-label">Mobile</span>
+                    <span class="info-value"><a href="tel:{{ speaker.mobile }}">{{ speaker.mobile }}</a></span>
+                </div>
+                {% endif %}
+                {% if speaker.organization %}
+                <div class="info-row">
+                    <span class="info-label">Organization</span>
+                    <span class="info-value">{{ speaker.organization }}</span>
+                </div>
+                {% endif %}
+                {% if speaker.designation %}
+                <div class="info-row">
+                    <span class="info-label">Designation</span>
+                    <span class="info-value">{{ speaker.designation }}</span>
+                </div>
+                {% endif %}
+
+                {% if speaker.expertise %}
+                <h5 class="mt-4"><i class="bi bi-tags"></i> Expertise</h5>
+                <div class="expertise-tags">
+                    {% for tag in speaker.expertise.split(',') %}
+                    <span class="expertise-tag">{{ tag.strip() }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if speaker.linkedin_url or speaker.twitter_url or speaker.github_url or speaker.website_url %}
+                <h5 class="mt-4"><i class="bi bi-link-45deg"></i> Social Links</h5>
+                <div class="social-links">
+                    {% if speaker.linkedin_url %}
+                    <a href="{{ speaker.linkedin_url }}" target="_blank" class="social-link" title="LinkedIn"><i class="bi bi-linkedin"></i></a>
+                    {% endif %}
+                    {% if speaker.twitter_url %}
+                    <a href="{{ speaker.twitter_url }}" target="_blank" class="social-link" title="Twitter / X"><i class="bi bi-twitter-x"></i></a>
+                    {% endif %}
+                    {% if speaker.github_url %}
+                    <a href="{{ speaker.github_url }}" target="_blank" class="social-link" title="GitHub"><i class="bi bi-github"></i></a>
+                    {% endif %}
+                    {% if speaker.website_url %}
+                    <a href="{{ speaker.website_url }}" target="_blank" class="social-link" title="Website"><i class="bi bi-globe2"></i></a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Right Column -->
+            <div class="spk-section">
+                {% if speaker.bio %}
+                <h5><i class="bi bi-card-text"></i> Bio</h5>
+                <div class="bio-text">{{ speaker.bio }}</div>
+                {% endif %}
+
+                {% if speaker.notes %}
+                <h5 class="mt-4"><i class="bi bi-sticky"></i> Internal Notes</h5>
+                <div class="notes-text">{{ speaker.notes }}</div>
+                {% endif %}
+
+                <div class="info-row mt-3">
+                    <span class="info-label">Added</span>
+                    <span class="info-value">{{ speaker.created_at.strftime('%B %d, %Y') if speaker.created_at else 'N/A' }}</span>
+                </div>
+                {% if speaker.updated_at %}
+                <div class="info-row">
+                    <span class="info-label">Last Updated</span>
+                    <span class="info-value">{{ speaker.updated_at.strftime('%B %d, %Y %I:%M %p') }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sessions Section -->
+<div class="sessions-section mt-3">
+    <div class="sessions-section-header">
+        <h4><i class="bi bi-calendar-event me-2" style="color:var(--primary);"></i>Sessions & Events ({{ sessions|length }})</h4>
+    </div>
+    <div class="sessions-section-body">
+        {% if sessions %}
+            {% for row, event in sessions %}
+            <div class="session-row">
+                <div class="session-icon"><i class="bi bi-calendar-event"></i></div>
+                <div class="session-info">
+                    <div class="session-name">{{ row.session_title or event.name }}</div>
+                    <div class="session-event">
+                        <a href="{{ url_for('event_dashboard', event_id=event.id) }}" style="color:var(--primary);text-decoration:none;">{{ event.name }}</a>
+                    </div>
+                </div>
+                <span class="session-type">{{ row.session_type or 'Talk' }}</span>
+                <span class="session-date"><i class="bi bi-calendar3 me-1"></i>{{ event.date.strftime('%b %d, %Y') }}</span>
+                <form method="POST" action="{{ url_for('speaker_remove_event', speaker_id=speaker.id, event_id=event.id) }}"
+                      onsubmit="return confirm('Remove this session assignment?');" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>
+                </form>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-sessions">
+                <i class="bi bi-calendar-x"></i>
+                <p>No sessions assigned yet</p>
+            </div>
+        {% endif %}
+
+        <!-- Assign to Event Form -->
+        <div class="assign-form mt-3">
+            <h6><i class="bi bi-plus-circle me-1" style="color:var(--primary);"></i> Assign to Event</h6>
+            <form method="POST" action="{{ url_for('speaker_assign_event', speaker_id=speaker.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <select name="event_id" class="form-select form-select-sm" required>
+                            <option value="">Select Event</option>
+                            {% for event in all_events %}
+                            <option value="{{ event.id }}">{{ event.name }} ({{ event.date.strftime('%b %d, %Y') }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" name="session_title" class="form-control form-control-sm" placeholder="Session Title (optional)">
+                    </div>
+                    <div class="col-md-3">
+                        <select name="session_type" class="form-select form-select-sm">
+                            <option value="talk">Talk</option>
+                            <option value="keynote">Keynote</option>
+                            <option value="workshop">Workshop</option>
+                            <option value="panel">Panel Discussion</option>
+                            <option value="lightning">Lightning Talk</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-lg me-1"></i>Assign</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

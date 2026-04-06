@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Speaker' if mode == 'edit' else 'Add Speaker' }} - EventFlow{% endblock %}
+{% block head %}
+<style>
+.spk-form-card {
+    background: white;
+    border-radius: 1.5rem;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    animation: slideUp 0.5s ease-out;
+}
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.form-header {
+    background: var(--surface);
+    color: var(--text);
+    padding: 2rem;
+    border-radius: 1.5rem 1.5rem 0 0;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+}
+.form-header i { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; color: var(--primary); }
+.form-header h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+.form-header p { margin: 0.5rem 0 0 0; color: var(--text-secondary); }
+
+.form-body { padding: 2rem; }
+
+.section-title {
+    font-size: 0.85rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--primary);
+    margin: 1.5rem 0 1rem; padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--brand-100);
+    display: flex; align-items: center; gap: 0.5rem;
+}
+.section-title:first-of-type { margin-top: 0; }
+
+.form-group { margin-bottom: 1.25rem; }
+.form-label { font-weight: 600; color: var(--text); margin-bottom: 0.5rem; font-size: 0.9rem; }
+.form-label .bi { color: var(--primary); margin-right: 0.3rem; }
+
+.form-control, .form-select {
+    border: 2px solid #e5e7eb; border-radius: 0.75rem;
+    padding: 0.75rem 1rem; font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); outline: none;
+}
+.form-text { color: #6b7280; font-size: 0.82rem; margin-top: 0.3rem; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+.current-photo {
+    display: flex; align-items: center; gap: 1rem; padding: 0.75rem;
+    background: #f8fafc; border-radius: 0.75rem; margin-bottom: 0.75rem;
+    border: 1px solid #e2e8f0;
+}
+.current-photo img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-200); }
+
+.file-upload-btn {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.875rem 1rem; border: 2px dashed #d1d5db; border-radius: 0.75rem;
+    background: white; cursor: pointer; transition: all 0.3s ease; width: 100%;
+    position: relative; overflow: hidden;
+}
+.file-upload-btn:hover { border-color: var(--primary); background: rgba(37, 99, 235, 0.02); }
+.file-upload-btn input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.file-upload-btn i { font-size: 1.25rem; color: var(--primary); }
+
+.avail-radio-group { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.avail-radio-group label {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 1rem; border: 2px solid #e5e7eb; border-radius: 0.75rem;
+    cursor: pointer; transition: all 0.2s; font-size: 0.88rem; font-weight: 500;
+}
+.avail-radio-group input:checked + label,
+.avail-radio-group label:has(input:checked) {
+    border-color: var(--primary); background: var(--brand-50); color: var(--primary);
+}
+.avail-radio-group input { display: none; }
+
+.btn-submit {
+    background: var(--primary); border: none; color: white;
+    padding: 0.875rem 2rem; font-size: 1.05rem; font-weight: 600;
+    border-radius: 0.75rem; transition: all 0.3s ease;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+}
+.btn-submit:hover { background: var(--primary-dark); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35); color: white; }
+.btn-cancel {
+    padding: 0.875rem 2rem; font-size: 1.05rem; font-weight: 600;
+    border-radius: 0.75rem; border: 2px solid #d1d5db; color: #6b7280; background: white;
+}
+.btn-cancel:hover { background: #f8fafc; color: #4b5563; }
+
+@media (max-width: 767.98px) {
+    .two-col { grid-template-columns: 1fr; }
+    .form-body { padding: 1.5rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="spk-form-card">
+            <div class="form-header">
+                <i class="bi {{ 'bi-pencil-square' if mode == 'edit' else 'bi-person-plus-fill' }}"></i>
+                <h1>{{ 'Edit Speaker' if mode == 'edit' else 'Add New Speaker' }}</h1>
+                <p>{{ 'Update details for ' + speaker.name if mode == 'edit' else 'Add a speaker to your database' }}</p>
+            </div>
+
+            <div class="form-body">
+                <form method="POST" enctype="multipart/form-data">
+                    {{ form.hidden_tag() }}
+
+                    <!-- ─── Basic Info ─── -->
+                    <div class="section-title"><i class="bi bi-person"></i> Basic Information</div>
+
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-person-fill"></i> Full Name *</label>
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else ""), placeholder="e.g. John Doe") }}
+                            {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-envelope"></i> Email *</label>
+                            {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="speaker@example.com") }}
+                            {% for e in form.email.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-phone"></i> Mobile Number</label>
+                            {{ form.mobile(class="form-control", placeholder="+91 98765 43210") }}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-globe"></i> Availability</label>
+                            {{ form.availability(class="form-select") }}
+                        </div>
+                    </div>
+
+                    <!-- ─── Professional ─── -->
+                    <div class="section-title"><i class="bi bi-briefcase"></i> Professional Details</div>
+
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-building"></i> Organization</label>
+                            {{ form.organization(class="form-control", placeholder="e.g. Microsoft") }}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-award"></i> Designation</label>
+                            {{ form.designation(class="form-control", placeholder="e.g. Senior Engineer") }}
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label"><i class="bi bi-tags"></i> Expertise / Topics</label>
+                        {{ form.expertise(class="form-control", placeholder="e.g. Azure, AI, DevOps, Cloud Native") }}
+                        <div class="form-text">Comma-separated tags for easy search & filtering</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label"><i class="bi bi-card-text"></i> Bio</label>
+                        {{ form.bio(class="form-control", rows="3", placeholder="Brief speaker biography...") }}
+                    </div>
+
+                    <!-- ─── Photo ─── -->
+                    <div class="section-title"><i class="bi bi-camera"></i> Profile Photo</div>
+
+                    {% if mode == 'edit' and speaker.photo_url %}
+                    <div class="current-photo">
+                        <img src="{{ speaker.photo_url }}" alt="{{ speaker.name }}">
+                        <div>
+                            <strong style="font-size:0.85rem;">Current photo</strong><br>
+                            <span style="font-size:0.78rem;color:var(--text-secondary);">Upload a new one to replace it</span>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="form-group">
+                        <div class="file-upload-btn" id="photoUploadBtn">
+                            <input type="file" name="{{ form.photo.name }}" accept="image/*" id="photoInput"
+                                   onchange="previewPhoto(this)">
+                            <i class="bi bi-cloud-upload"></i>
+                            <span style="font-weight:500;color:#6b7280;">
+                                <strong style="color:#4b5563;">Click to upload</strong> photo (JPG, PNG, GIF)
+                            </span>
+                        </div>
+                        <div id="photoPreview" style="display:none;margin-top:0.75rem;">
+                            <img id="photoPreviewImg" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--brand-200);">
+                        </div>
+                    </div>
+
+                    <!-- ─── Social Links ─── -->
+                    <div class="section-title"><i class="bi bi-link-45deg"></i> Social Links</div>
+
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-linkedin"></i> LinkedIn</label>
+                            {{ form.linkedin_url(class="form-control", placeholder="https://linkedin.com/in/...") }}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-twitter-x"></i> Twitter / X</label>
+                            {{ form.twitter_url(class="form-control", placeholder="https://x.com/...") }}
+                        </div>
+                    </div>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-github"></i> GitHub</label>
+                            {{ form.github_url(class="form-control", placeholder="https://github.com/...") }}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label"><i class="bi bi-globe2"></i> Website</label>
+                            {{ form.website_url(class="form-control", placeholder="https://...") }}
+                        </div>
+                    </div>
+
+                    <!-- ─── Notes & Status ─── -->
+                    <div class="section-title"><i class="bi bi-gear"></i> Settings</div>
+
+                    <div class="form-group">
+                        <label class="form-label"><i class="bi bi-sticky"></i> Internal Notes</label>
+                        {{ form.notes(class="form-control", rows="2", placeholder="Private notes (not shown to public)") }}
+                    </div>
+
+                    <div class="form-group">
+                        <div class="form-check form-switch">
+                            {{ form.is_active(class="form-check-input", role="switch", id="isActive") }}
+                            <label class="form-check-label fw-semibold" for="isActive">
+                                Active Speaker
+                            </label>
+                        </div>
+                        <div class="form-text">Inactive speakers are hidden from event assignment dropdowns</div>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-submit">
+                            <i class="bi {{ 'bi-check-lg' if mode == 'edit' else 'bi-plus-circle' }} me-2"></i>
+                            {{ 'Save Changes' if mode == 'edit' else 'Add Speaker' }}
+                        </button>
+                        <a href="{{ url_for('speaker_detail', speaker_id=speaker.id) if mode == 'edit' else url_for('speaker_list') }}" class="btn btn-cancel">
+                            <i class="bi bi-arrow-left me-2"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function previewPhoto(input) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('photoPreview').style.display = 'block';
+            document.getElementById('photoPreviewImg').src = e.target.result;
+            var btn = document.getElementById('photoUploadBtn');
+            btn.querySelector('span').innerHTML = '<strong style="color:#10b981;">' + input.files[0].name + '</strong>';
+            btn.style.borderColor = '#10b981';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+</script>
+{% endblock %}

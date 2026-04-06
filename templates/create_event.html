@@ -28,28 +28,19 @@
 }
 
 .form-header {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
+    background: var(--surface);
+    color: var(--text);
     padding: 2rem 2rem;
     border-radius: 1.5rem 1.5rem 0 0;
     text-align: center;
-    position: relative;
-}
-
-.form-header::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.2);
+    border-bottom: 1px solid var(--border);
 }
 
 .form-header i {
     font-size: 2.5rem;
     margin-bottom: 0.75rem;
     display: block;
+    color: var(--primary);
 }
 
 .form-header h1 {
@@ -69,14 +60,14 @@
 
 .form-label {
     font-weight: 600;
-    color: #1e1b4b;
+    color: var(--text);
     margin-bottom: 0.625rem;
     font-size: 0.95rem;
     display: block;
 }
 
 .form-label .bi {
-    color: #8b5cf6;
+    color: #3b82f6;
     margin-right: 0.375rem;
 }
 
@@ -92,8 +83,8 @@
 
 .form-control:focus,
 .form-select:focus {
-    border-color: #8b5cf6;
-    box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
     outline: none;
 }
 
@@ -125,13 +116,13 @@
 }
 
 .form-text .bi {
-    color: #8b5cf6;
+    color: #3b82f6;
     margin-right: 0.25rem;
 }
 
 .form-text code {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.1));
-    color: #8b5cf6;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(59, 130, 246, 0.1));
+    color: #3b82f6;
     padding: 0.125rem 0.375rem;
     border-radius: 0.25rem;
     font-family: 'Fira Code', monospace;
@@ -139,7 +130,7 @@
 }
 
 .btn-submit {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: var(--primary);
     border: none;
     color: white;
     padding: 0.875rem 2rem;
@@ -147,32 +138,13 @@
     font-weight: 600;
     border-radius: 0.75rem;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.35);
-    position: relative;
-    overflow: hidden;
-}
-
-.btn-submit::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0;
-    height: 0;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    transform: translate(-50%, -50%);
-    transition: width 0.6s, height 0.6s;
-}
-
-.btn-submit:active::before {
-    width: 300px;
-    height: 300px;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
 }
 
 .btn-submit:hover {
+    background: var(--primary-dark);
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
 }
 
 .btn-submit:active {
@@ -198,15 +170,15 @@
 }
 
 .info-box {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(99, 102, 241, 0.05));
-    border-left: 4px solid #8b5cf6;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(59, 130, 246, 0.05));
+    border-left: 4px solid #3b82f6;
     border-radius: 0.75rem;
     padding: 1.25rem 1.5rem;
     margin-bottom: 1.5rem;
 }
 
 .info-box h6 {
-    color: #1e1b4b;
+    color: var(--text);
     font-weight: 700;
     margin-bottom: 0.5rem;
 }
@@ -238,7 +210,7 @@
 }
 
 .speakers-section h6 {
-    color: #1e1b4b;
+    color: var(--text);
     font-weight: 700;
     margin-bottom: 1rem;
 }
@@ -259,7 +231,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
     color: white;
     display: flex;
     align-items: center;
@@ -288,7 +260,7 @@
 
 .add-speaker-btn {
     padding: 0.5rem 1rem;
-    background: #8b5cf6;
+    background: #3b82f6;
     color: white;
     border: none;
     border-radius: 0.5rem;
@@ -298,7 +270,7 @@
 }
 
 .add-speaker-btn:hover {
-    background: #6366f1;
+    background: #2563eb;
 }
 
 /* File upload styling */
@@ -333,13 +305,13 @@
 }
 
 .file-upload-btn:hover {
-    border-color: #8b5cf6;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.03), rgba(99, 102, 241, 0.03));
+    border-color: #3b82f6;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.03), rgba(59, 130, 246, 0.03));
 }
 
 .file-upload-btn i {
     font-size: 1.5rem;
-    color: #8b5cf6;
+    color: #3b82f6;
 }
 
 .file-upload-btn-text {
@@ -748,8 +720,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function highlight(e) {
-        uploadBtn.style.borderColor = '#8b5cf6';
-        uploadBtn.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.08))';
+        uploadBtn.style.borderColor = '#3b82f6';
+        uploadBtn.style.background = 'linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(59, 130, 246, 0.08))';
     }
 
     function unhighlight(e) {
