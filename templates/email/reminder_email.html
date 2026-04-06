@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Reminder - {{ event.name }}</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f0f4f8;">
+    <div style="max-width: 600px; margin: 0 auto;">
+
+        <!-- Header -->
+        {% if reminder_type == 'tomorrow' %}
+        <div style="background: linear-gradient(135deg, #f59e0b, #f97316); color: white; padding: 28px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+            <div style="font-size: 48px; margin-bottom: 8px;">⏰</div>
+            <h1 style="margin: 0; font-size: 22px; font-weight: 700;">Your Event is Tomorrow!</h1>
+            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px;">Don't forget — {{ event.name }} is happening tomorrow</p>
+        </div>
+        {% elif reminder_type == 'today' %}
+        <div style="background: linear-gradient(135deg, #ef4444, #f97316); color: white; padding: 28px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+            <div style="font-size: 48px; margin-bottom: 8px;">🎉</div>
+            <h1 style="margin: 0; font-size: 22px; font-weight: 700;">Your Event is Today!</h1>
+            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px;">{{ event.name }} is happening now — see you there!</p>
+        </div>
+        {% else %}
+        <div style="background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; padding: 28px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+            <div style="font-size: 48px; margin-bottom: 8px;">📅</div>
+            <h1 style="margin: 0; font-size: 22px; font-weight: 700;">Upcoming Event Reminder</h1>
+            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px;">{{ event.name }} is coming up soon!</p>
+        </div>
+        {% endif %}
+
+        <!-- Content -->
+        <div style="background: #ffffff; padding: 28px; border-radius: 0 0 12px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+            <p style="margin: 0 0 16px 0; font-size: 15px;">Dear <strong>{{ participant.name }}</strong>,</p>
+
+            {% if reminder_type == 'tomorrow' %}
+            <p style="margin: 0 0 16px 0; font-size: 15px;">This is a friendly reminder that <strong>{{ event.name }}</strong> is happening <strong>tomorrow</strong>! Make sure you're all set to attend.</p>
+            {% elif reminder_type == 'today' %}
+            <p style="margin: 0 0 16px 0; font-size: 15px;">This is a reminder that <strong>{{ event.name }}</strong> is happening <strong>today</strong>! We look forward to seeing you there.</p>
+            {% else %}
+            <p style="margin: 0 0 16px 0; font-size: 15px;">This is a reminder about your upcoming event <strong>{{ event.name }}</strong> scheduled on <strong>{{ event.date.strftime('%A, %B %d, %Y') }}</strong>.</p>
+            {% endif %}
+
+            <!-- Event Details Card -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin: 0 0 14px 0; color: #1e293b; font-size: 16px;">📋 Event Details</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #64748b; width: 35%; font-size: 13px;">Event</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #1e293b;">{{ event.name }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #64748b; font-size: 13px;">Date</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #1e293b;">{{ event.date.strftime('%A, %B %d, %Y') }}</td>
+                    </tr>
+                    {% if event.time %}
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #64748b; font-size: 13px;">Time</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #1e293b;">
+                            {{ event.time.strftime('%I:%M %p') }}
+                            {% if event.event_end_time %} – {{ event.event_end_time.strftime('%I:%M %p') }}{% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if event.location %}
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #64748b; font-size: 13px;">Location</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #1e293b;">{{ event.location }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if event.organizer_name %}
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #64748b; font-size: 13px;">Organizer</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #1e293b;">{{ event.organizer_name }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+
+            <!-- Ticket Box -->
+            <div style="background: #eff6ff; border: 2px dashed #2563eb; padding: 18px; margin: 20px 0; text-align: center; border-radius: 10px;">
+                <h3 style="margin: 0 0 8px 0; color: #2563eb; font-size: 14px;">🎟️ Your Ticket</h3>
+                <div style="font-size: 22px; font-weight: 700; color: #2563eb; font-family: 'Courier New', monospace; background: #ffffff; padding: 10px; border-radius: 6px; margin: 8px 0; display: inline-block; letter-spacing: 1px;">{{ participant.ticket_number }}</div>
+                <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748b;">Please keep this ticket number handy for check-in</p>
+            </div>
+
+            {% if event.google_maps_url %}
+            <!-- Maps Link -->
+            <div style="text-align: center; margin: 16px 0;">
+                <a href="{{ event.google_maps_url }}" target="_blank" rel="noopener"
+                   style="display: inline-block; background: #ffffff; color: #2563eb; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px; border: 1px solid #2563eb;">
+                    📍 View on Google Maps
+                </a>
+            </div>
+            {% endif %}
+
+            <!-- Add to Calendar -->
+            {% if calendar_url %}
+            <div style="text-align: center; margin: 24px 0;">
+                <p style="margin: 0 0 12px 0; font-size: 13px; color: #64748b; font-weight: 500;">Add to your calendar so you don't forget:</p>
+                <a href="{{ calendar_url }}" target="_blank" rel="noopener"
+                   style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                    📅 Add to Google Calendar
+                </a>
+                <p style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8;">An .ics calendar file is also attached for Outlook / Apple Calendar.</p>
+            </div>
+            {% endif %}
+
+            {% if event.event_official_link %}
+            <div style="text-align: center; margin: 16px 0;">
+                <a href="{{ event.event_official_link }}" target="_blank" rel="noopener"
+                   style="display: inline-block; color: #2563eb; font-size: 13px; font-weight: 600; text-decoration: underline;">
+                    🔗 Visit Event Page
+                </a>
+            </div>
+            {% endif %}
+
+            <!-- Checklist for tomorrow/today -->
+            {% if reminder_type in ['tomorrow', 'today'] %}
+            <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #92400e; font-size: 14px;">✅ Quick Checklist</h4>
+                <ul style="margin: 0; padding: 0 0 0 20px; color: #92400e; font-size: 13px; line-height: 1.8;">
+                    <li>Have your ticket number ready: <strong>{{ participant.ticket_number }}</strong></li>
+                    {% if event.time %}<li>Event starts at <strong>{{ event.time.strftime('%I:%M %p') }}</strong> — arrive a few minutes early</li>{% endif %}
+                    {% if event.location %}<li>Venue: <strong>{{ event.location }}</strong></li>{% endif %}
+                    <li>Check your email for any last-minute updates</li>
+                </ul>
+            </div>
+            {% endif %}
+
+            <p style="margin: 20px 0 0 0; font-size: 14px;">We look forward to seeing you{% if reminder_type == 'tomorrow' %} tomorrow{% elif reminder_type == 'today' %} today{% endif %}!</p>
+
+            <p style="margin: 16px 0 0 0; font-size: 14px;">Best regards,<br>
+            <strong>{% if event.organizer_name %}{{ event.organizer_name }}{% else %}The Event Team{% endif %}</strong></p>
+
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 28px; padding-top: 18px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px;">
+                <p style="margin: 4px 0;">This is an automated reminder. Please do not reply.</p>
+                <p style="margin: 4px 0;">© {{ event.date.strftime('%Y') }} Event Ticketing System</p>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

@@ -3,865 +3,662 @@
 {% block head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <style>
-/* Modern Participants Table */
-.participants-wrapper {
-    background: white;
-    border-radius: 1rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+/* ── Dashboard Header ── */
+.dash-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2xl);
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+.dash-header h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 0.35rem;
+}
+.dash-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+.dash-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.dash-meta-item i { color: var(--primary); font-size: 0.9rem; }
+.community-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--brand-50);
+    color: var(--primary);
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--r-full);
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid var(--brand-200);
+}
+.dash-actions .btn {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--r-lg);
+    font-weight: 600;
+}
+
+/* ── Stats ── */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Details Card ── */
+.details-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2xl);
+    margin-bottom: 1.5rem;
     overflow: hidden;
 }
-
-.participants-table {
+.details-panel-header {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.details-panel-header h6 {
     margin: 0;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text);
 }
-
-.participants-table =ad {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-}
-
-.participants-table =ad th {
-    border: none;
-    padding: 1rem 0.875rem;
+.details-panel-body { padding: 1.25rem; }
+.detail-label {
+    font-size: 0.75rem;
     font-weight: 600;
-    font-size: 0.85rem;
-    letter-spacing: 0.025em;
     text-transform: uppercase;
-    color: white;
-}
-
-.participant-row {
-    border-bottom: 1px solid #e2e8f0;
-    transition: all 0.2s ease;
-    height: auto;
-    min-height: 60px;
-}
-
-.participant-row:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%);
-    transform: scale(1.005);
-}
-
-.participant-row:last-child {
-    border-bottom: none;
-}
-
-/* Status badges */
-.status-badge {
-    padding: 0.375rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-}
-
-.status-badge.checked-in {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-    color: #065f46;
-    border: 1px solid #6ee7b7;
-}
-
-.status-badge.pending {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
-    color: #92400e;
-    border: 1px solid #fbbf24;
-}
-
-.status-badge.checked-out {
-    background: linear-gradient(135deg, #e5e7eb, #d1d5db);
-    color: #374151;
-}
-
-.email-badge {
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.email-badge.sent {
-    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-    color: #1e40af;
-}
-
-.email-badge.not-sent {
-    background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
-    color: #6b7280;
-}
-
-.cert-badge {
-    padding: 0.375rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-}
-
-.cert-badge.issued {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: white;
-}
-
-.cert-badge.reissued {
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    color: white;
-}
-
-.cert-badge.not-issued {
-    background: linear-gradient(135deg, #e5e7eb, #d1d5db);
-    color: #6b7280;
-}
-
-/* Participant info */
-.participant-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.5rem;
-}
-
-.participant-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text-primary);
-    line-height: 1.3;
-}
-
-.participant-email {
-    font-size: 0.8rem;
+    letter-spacing: 0.03em;
     color: var(--text-secondary);
-    line-height: 1.3;
+    margin-bottom: 0.25rem;
+}
+.detail-value { color: var(--text); line-height: 1.5; }
+
+/* ── Add Participant ── */
+.add-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2xl);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    box-shadow: var(--shadow-xs);
+}
+.add-row .form-control {
+    border-radius: var(--r-lg);
 }
 
-/* Ticket number */
-.ticket-number {
-    background: linear-gradient(135deg, #f8fafc, #edf2f7);
-    color: var(--text-primary);
+/* ── Toolbar ── */
+.toolbar-section {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+.toolbar-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.count-chip {
+    background: var(--brand-50);
+    color: var(--primary);
+    font-size: 0.78rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--r-full);
+    font-weight: 700;
+    border: 1px solid var(--brand-200);
+}
+.bulk-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.bulk-bar .btn { font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+
+/* ── Filter Bar ── */
+.filter-bar {
+    background: var(--gray-50);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2xl);
+    padding: 0.875rem 1rem;
+    margin-bottom: 0.75rem;
+}
+.filter-bar .form-control,
+.filter-bar .form-select {
+    border-radius: var(--r-lg);
+    font-size: 0.85rem;
     padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
+}
+
+/* ── Participants Table ── */
+.tbl-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-2xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-xs);
+}
+.tbl-wrap table { margin: 0; }
+.tbl-wrap thead {
+    background: var(--gray-50);
+}
+.tbl-wrap thead th {
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.7rem 0.75rem;
     font-weight: 600;
-    border: 1px solid #e2e8f0;
-    font-family: 'Fira Code', monospace;
-}
-
-/* Time display */
-.time-display {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: var(--text-secondary);
+    vertical-align: middle;
+}
+.tbl-wrap tbody tr {
+    border-bottom: 1px solid var(--border-light);
+    transition: background 0.1s ease;
+}
+.tbl-wrap tbody tr:hover { background: var(--brand-50); }
+.tbl-wrap tbody tr:last-child { border-bottom: none; }
+.tbl-wrap tbody td {
+    padding: 0.65rem 0.75rem;
+    vertical-align: middle;
+    font-size: 0.85rem;
 }
 
-.time-item {
+/* Participant name/email */
+.p-info { display: flex; flex-direction: column; gap: 0.1rem; }
+.p-name { font-weight: 600; color: var(--text); font-size: 0.88rem; }
+.p-email { font-size: 0.75rem; color: var(--text-secondary); }
+
+/* Ticket */
+.ticket-code {
+    display: inline-block;
+    background: var(--gray-100);
+    color: var(--text);
+    padding: 0.25rem 0.55rem;
+    border-radius: var(--r-md);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    border: 1px solid var(--border);
+}
+
+/* Action dots */
+.act-group {
     display: flex;
-    align-items: center;
-    gap:  0.25rem;
+    gap: 0.2rem;
+    justify-content: center;
 }
-
-/* Action buttons */
-.action-btn {
-    padding: 0.3125rem 0.5rem;
-    border-radius: 0.375rem;
-    font-size: 0.7rem;
-    font-weight: 500;
+.act {
+    width: 28px; height: 28px;
+    border-radius: var(--r-md);
     border: 1.5px solid currentColor;
-    transition: all 0.2s ease;
-    min-width: 28px;
-    height: 28px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    font-size: 0.72rem;
+    transition: all 0.15s ease;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+}
+.act:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+.act:active { transform: scale(0.95); }
+.act-green { color: var(--success); }
+.act-green:hover { background: var(--success); color: #fff; border-color: var(--success); }
+.act-ghost { color: var(--gray-400); border-color: var(--gray-300); }
+.act-ghost:hover { background: var(--success); color: #fff; border-color: var(--success); }
+.act-amber { color: var(--warning); }
+.act-amber:hover { background: var(--warning); color: #fff; border-color: var(--warning); }
+.act-blue { color: var(--primary); }
+.act-blue:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.act-sky { color: var(--info); }
+.act-sky:hover { background: var(--info); color: #fff; border-color: var(--info); }
+.act-red { color: var(--danger); }
+.act-red:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+/* ── Pagination ── */
+.paging-section {
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
 }
 
-.action-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px currentColor;
-}
-
-.action-btn:active {
-    transform: translateY(0) scale(0.95);
-}
-
-.action-btn.btn-success {
-    color: #10b981;
-    border-color: #10b981;
-}
-
-.action-btn.btn-success:hover {
-    background: #10b981;
-    color: white;
-}
-
-.action-btn.btn-warning {
-    color: #f59e0b;
-    border-color: #f59e0b;
-}
-
-.action-btn.btn-warning:hover {
-    background: #f59e0b;
-    color: white;
-}
-
-.action-btn.btn-info {
-    color: #3b82f6;
-    border-color: #3b82f6;
-}
-
-.action-btn.btn-info:hover {
-    background: #3b82f6;
-    color: white;
-}
-
-.action-btn.btn-primary {
-    color: #6366f1;
-    border-color: #6366f1;
-}
-
-.action-btn.btn-primary:hover {
-    background: #6366f1;
-    color: white;
-}
-
-.action-btn.btn-danger {
-    color: #ef4444;
-    border-color: #ef4444;
-}
-
-.action-btn.btn-danger:hover {
-    background: #ef4444;
-    color: white;
-}
-
-/* Stats card enhancements */
-.stats-card {
-    border-radius: 1rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-}
-
-.stats-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--primary-gradient-start), var(--primary-gradient-end));
-}
-
-.stats-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-}
-
-/* Search and filter section */
-.search-section {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03), rgba(118, 75, 162, 0.03) 100%);
-    padding: 1.5rem;
-    border-radius: 1rem;
-    border: 1px solid rgba(99, 102, 241, 0.1);
-    margin-bottom: 1.5rem;
-}
-
-.search-input {
-    border: 2px solid #d1d5db;
-    border-radius: 0.75rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.95rem;
-    transition: all 0.3s ease;
-    background: white;
-    color: var(--text-primary);
-}
-
-.search-input:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-    outline: none;
-}
-
-.filter-select {
-    border: 2px solid #d1d5db;
-    border-radius: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
-    background: white;
-    color: var(--text-primary);
-}
-
-.filter-select:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-    outline: none;
-}
-
-/* Add participant card */
-.add-participant-card {
-    border: 1px solid rgba(99, 102, 241, 0.1);
-    border-radius: 1rem;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    background: white;
-}
-
-/* Responsive adjustments */
-@media (max-width: 767.98px) {
-    .participants-table =ad th,
-    .participants-table td {
-        padding: 0.75rem 0.5rem;
-        font-size: 0.8rem;
-    }
-
-    .participant-info {
-        padding: 0.25rem;
-    }
-
-    .participant-name {
-        font-size: 0.85rem;
-    }
-
-    .participant-email {
-        font-size: 0.75rem;
-    }
-
-    .status-badge,
-    .email-badge,
-    .cert-badge {
-        font-size: 0.65rem;
-        padding: 0.25rem 0.5rem;
-    }
-
-    .action-btn {
-        min-width: 24px;
-        height: 24px;
-        font-size: 0.65rem;
-    }
-
-    /* Hide less important columns on mobile */
-    .d-none-mobile {
-        display: none !important;
-    }
-}
-
-/* Loading state */
-.table-loading {
+/* ── Empty ── */
+.empty-box {
     text-align: center;
-    padding: 3rem;
-    color: var(--text-secondary);
+    padding: 3.5rem 2rem;
+}
+.empty-box-icon {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: var(--gray-100);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    color: var(--gray-400);
+    margin-bottom: 1rem;
 }
 
-.table-loading i {
-    font-size: 2rem;
-    color: var(--primary-color);
-    animation: spin 1s linear infinite;
+/* ── Toast ── */
+.toast-msg {
+    position: fixed; top: 1rem; right: 1rem;
+    z-index: 9999; min-width: 260px;
+    animation: slideInRight 0.3s ease;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+/* ── Responsive ── */
+@media (max-width: 767.98px) {
+    .dash-header { padding: 1.25rem; }
+    .dash-header h1 { font-size: 1.2rem; }
+    .dash-actions .btn { font-size: 0.72rem; padding: 0.3rem 0.55rem; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .tbl-wrap thead th { padding: 0.55rem 0.5rem; font-size: 0.68rem; }
+    .tbl-wrap tbody td { padding: 0.5rem 0.4rem; font-size: 0.78rem; }
+    .act { width: 24px; height: 24px; font-size: 0.65rem; }
+    .hide-sm { display: none !important; }
+}
+@media (max-width: 575.98px) {
+    .toolbar-section { flex-direction: column; align-items: flex-start; }
+    .bulk-bar { width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 0.4rem; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Page Header -->
-<div class="row align-items-center mb-4">
-    <div class="col-md-7">
-        <h1 class="fw-bold mb-1" style="color: var(--text-primary);">
-            <i class="bi bi-calendar-event me-2"></i>
-            {{ event.name }}
-        </h1>
-        <p class="text-muted mb-0">
-            <i class="bi bi-calendar3 me-1"></i>
-            {{ event.date|ist_ist_time('%B %d, %Y') }}
-            {% if event.time %}
-                <span class="ms-2">|</span>
-                <i class="bi bi-clock me-1"></i>
-                <span>{{ event.time|ist_ist_time('%I:%M %p') }}</span>
-                {% if event|has_attr('event_end_time') and event.event_end_time %}
-                    <span>-</span>
-                    <span>{{ event.event_end_time|ist_ist_time('%I:%M %p') }}</span>
-                {% endif %}
-            {% endif %}
-            {% if event.location %}
-                <span class="ms-2">|</span>
-                <i class="bi bi-geo-alt me-1"></i>
-                {{ event.location }}
-            {% endif %}
-        </p>
-        {% if event|has_attr('community') and event.community %}
-            <p class="mb-0">
-                <span class="badge" style="background: var(--primary-color); color: white; padding: 0.25rem 0.5rem; font-size: 0.75rem;">
-                    <i class="bi bi-people-fill"></i>
-                    {{ event.community }}
+<!-- ═══ Dashboard Header ═══ -->
+<div class="dash-header animate-fade-in">
+    <div class="row align-items-center">
+        <div class="col-lg-7">
+            <h1><i class="bi bi-calendar-event me-2" style="color:var(--primary);"></i>{{ event.name }}</h1>
+            <div class="dash-meta mt-1">
+                <span class="dash-meta-item">
+                    <i class="bi bi-calendar3"></i>{{ event.date|ist_ist_time('%B %d, %Y') }}
                 </span>
-            </p>
-        {% endif %}
-    </div>
-    <div class="col-md-5">
-        <div class="d-flex flex-wrap gap-2 justify-content-md-end">
-            {% if current_user.is_authenticated and current_user.is_admin() %}
-                <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-info">
-                    <i class="bi bi-upload me-1"></i> Upload CSV
+                {% if event.time %}
+                <span class="dash-meta-item">
+                    <i class="bi bi-clock"></i>
+                    {{ event.time|ist_ist_time('%I:%M %p') }}
+                    {% if event|has_attr('event_end_time') and event.event_end_time %}
+                        – {{ event.event_end_time|ist_ist_time('%I:%M %p') }}
+                    {% endif %}
+                </span>
+                {% endif %}
+                {% if event.location %}
+                <span class="dash-meta-item">
+                    <i class="bi bi-geo-alt-fill"></i>{{ event.location }}
+                </span>
+                {% endif %}
+            </div>
+            {% if event|has_attr('community') and event.community %}
+            <div class="mt-2">
+                <span class="community-tag"><i class="bi bi-people-fill"></i>{{ event.community }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if current_user.is_authenticated and current_user.is_admin() %}
+        <div class="col-lg-5 mt-3 mt-lg-0">
+            <div class="dash-actions d-flex flex-wrap gap-2 justify-content-lg-end">
+                <a href="{{ url_for('edit_event', event_id=event.id) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-pencil-square me-1"></i>Edit Event
                 </a>
-                <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-success">
-                    <i class="bi bi-download me-1"></i> Export
+                <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="btn btn-soft-primary">
+                    <i class="bi bi-upload me-1"></i>Upload CSV
+                </a>
+                <a href="{{ url_for('export_attendance', event_id=event.id) }}" class="btn btn-outline-success">
+                    <i class="bi bi-download me-1"></i>Export
                 </a>
                 <a href="{{ url_for('event_qr_checkin', event_id=event.id) }}" class="btn btn-primary">
-                    <i class="bi bi-qr-code-scan me-1"></i> QR Check-in
+                    <i class="bi bi-qr-code-scan me-1"></i>QR Check-in
                 </a>
-                <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-warning">
-                    <i class="bi bi-award me-1"></i> Certificates
+                <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-outline-info">
+                    <i class="bi bi-award me-1"></i>Certificates
                 </a>
-                <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-primary">
-                    <i class="bi bi-question-lg me-1"></i> Quiz
+                <a href="{{ url_for('quiz_dashboard', event_id=event.id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-controller me-1"></i>Quiz
                 </a>
                 {% if session.get('user_role') == 'superadmin' %}
-                <a href="{{ url_for('view_event_feedback', event_id=event.id) }}" class="btn btn-secondary">
-                    <i class="bi bi-chat-quote me-1"></i> Feedback
+                <a href="{{ url_for('view_event_feedback', event_id=event.id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-chat-quote me-1"></i>Feedback
                 </a>
                 {% endif %}
-            {% endif %}
-        </div>
-        <div class="mt-2 text-end">
-            {% if current_user.is_authenticated and current_user.is_admin() %}
-                <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDeleteEvent()">
-                    <i class="bi bi-trash me-1"></i> Delete Event
+                <button type="button" class="btn btn-outline-danger" onclick="confirmDeleteEvent()">
+                    <i class="bi bi-trash3 me-1"></i>Delete
                 </button>
-            {% endif %}
+            </div>
         </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- Event Details Card -->
-{% if event.description or (event|has_attr('organizer_name') and event.organizer_name) or (event|has_attr('speakers') and event.speakers) or (event|has_attr('event_official_link') and event.event_official_link) or (event|has_attr('event_end_time') and event.event_end_time) %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card shadow-sm" style="border-radius: 1rem;">
-            <div class="card-header bg-transparent border-0 pt-3 pb-0">
-                <h5 class="fw-bold mb-0" style="color: var(--text-primary);">
-                    <i class="bi bi-info-circle me-2"></i>Event Details
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% if event.description %}
-                    <div class="col-md-6 mb-3">
-                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
-                            <i class="bi bi-card-text me-1"></i>Description
-                        </h6>
-                        <p class="mb-0" style="color: var(--text-primary); line-height: 1.6;">{{ event.description }}</p>
-                    </div>
-                    {% endif %}
-                    {% if event|has_attr('organizer_name') and event.organizer_name %}
-                    <div class="col-md-6 mb-3">
-                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
-                            <i class="bi bi-person-badge me-1"></i>Organizer
-                        </h6>
-                        <p class="mb-0" style="color: var(--text-primary);">{{ event.organizer_name }}</p>
-                    </div>
-                    {% endif %}
-                    {% if event|has_attr('speakers') and event.speakers %}
-                    <div class="col-md-6 mb-3">
-                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
-                            <i class="bi bi-mic me-1"></i>Speakers
-                        </h6>
-                        <p class="mb-0" style="color: var(--text-primary); line-height: 1.6;">{{ event.speakers|replace('\n', '<br>')|safe }}</p>
-                    </div>
-                    {% endif %}
-                    {% if event|has_attr('event_official_link') and event.event_official_link %}
-                    <div class="col-md-6 mb-3">
-                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
-                            <i class="bi bi-link-45deg me-1"></i>Official Link
-                        </h6>
-                        <a href="{{ event.event_official_link }}" target="_blank" class="btn btn-sm btn-outline-primary">
+<!-- ═══ Event Details (Collapsible) ═══ -->
+{% if event.description or (event|has_attr('organizer_name') and event.organizer_name) or (event|has_attr('speakers') and event.speakers) or (event|has_attr('event_official_link') and event.event_official_link) %}
+<div class="details-panel">
+    <div class="details-panel-header" data-bs-toggle="collapse" data-bs-target="#eventDetails">
+        <h6><i class="bi bi-info-circle me-2" style="color:var(--primary);"></i>Event Details</h6>
+        <i class="bi bi-chevron-down text-muted"></i>
+    </div>
+    <div class="collapse" id="eventDetails">
+        <div class="details-panel-body">
+            <div class="row g-4">
+                {% if event.description %}
+                <div class="col-md-6">
+                    <div class="detail-label"><i class="bi bi-card-text me-1"></i>Description</div>
+                    <div class="detail-value">{{ event.description }}</div>
+                </div>
+                {% endif %}
+                {% if event|has_attr('organizer_name') and event.organizer_name %}
+                <div class="col-md-6">
+                    <div class="detail-label"><i class="bi bi-person-badge me-1"></i>Organizer</div>
+                    <div class="detail-value">{{ event.organizer_name }}</div>
+                </div>
+                {% endif %}
+                {% if event|has_attr('speakers') and event.speakers %}
+                <div class="col-md-6">
+                    <div class="detail-label"><i class="bi bi-mic me-1"></i>Speakers</div>
+                    <div class="detail-value">{{ event.speakers|replace('\n', '<br>')|safe }}</div>
+                </div>
+                {% endif %}
+                {% if event|has_attr('event_official_link') and event.event_official_link %}
+                <div class="col-md-6">
+                    <div class="detail-label"><i class="bi bi-link-45deg me-1"></i>Official Link</div>
+                    <div class="detail-value">
+                        <a href="{{ event.event_official_link }}" target="_blank" class="btn btn-sm btn-soft-primary">
                             <i class="bi bi-box-arrow-up-right me-1"></i>Visit Event Page
                         </a>
                     </div>
-                    {% endif %}
-                    {% if event|has_attr('event_end_time') and event.event_end_time %}
-                    <div class="col-md-6 mb-3">
-                        <h6 class="fw-semibold mb-2" style="color: var(--text-secondary);">
-                            <i class="bi bi-stopwatch me-1"></i>Event Duration
-                        </h6>
-                        <p class="mb-0" style="color: var(--text-primary);">
-                            <i class="bi bi-clock me-1"></i>{{ event.time|ist_ist_time('%I:%M %p') if event.time else 'TBA' }}
-                            <span class="mx-2">-</span>
-                            {{ event.event_end_time|ist_ist_time('%I:%M %p') }}
-                        </p>
-                    </div>
-                    {% endif %}
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 {% endif %}
 
-<!-- Statistics Cards -->
-<div class="row mb-4">
-    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-        <div class="card stats-card bg-gradient text-white h-100">
-            <div class="card-body py-4">
-                <i class="fas fa-users fa-2x mb-3" style="opacity: 0.9;"></i>
-                <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Total</h5>
-                <h2 class="mb-0" style="font-weight: 800;">{{ stats.total }}</h2>
-            </div>
-        </div>
+<!-- ═══ Statistics ═══ -->
+<div class="stats-grid stagger">
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-blue"><i class="bi bi-people-fill"></i></div>
+        <div class="stat-value">{{ stats.total }}</div>
+        <div class="stat-label">Total</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-        <div class="card stats-card bg-success text-white h-100">
-            <div class="card-body py-4">
-                <i class="fas fa-check-circle fa-2x mb-3" style="opacity: 0.9;"></i>
-                <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Checked In</h5>
-                <h2 class="mb-0" style="font-weight: 800;">{{ stats.checked_in }}</h2>
-            </div>
-        </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-green"><i class="bi bi-check-circle-fill"></i></div>
+        <div class="stat-value">{{ stats.checked_in }}</div>
+        <div class="stat-label">Checked In</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-        <div class="card stats-card bg-warning text-dark h-100">
-            <div class="card-body py-4">
-                <i class="fas fa-clock fa-2x mb-3" style="opacity: 0.9;"></i>
-                <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Pending</h5>
-                <h2 class="mb-0" style="font-weight: 800;">{{ stats.pending }}</h2>
-            </div>
-        </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-amber"><i class="bi bi-hourglass-split"></i></div>
+        <div class="stat-value">{{ stats.pending }}</div>
+        <div class="stat-label">Pending</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-        <div class="card stats-card bg-info text-white h-100">
-            <div class="card-body py-4">
-                <i class="fas fa-envelope fa-2x mb-3" style="opacity: 0.9;"></i>
-                <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Emails Sent</h5>
-                <h2 class="mb-0" style="font-weight: 800;">{{ stats.email_sent }}</h2>
-            </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-sky"><i class="bi bi-envelope-check-fill"></i></div>
+        <div class="stat-value">{{ stats.emails_sent }}</div>
+        <div class="stat-label">Emails Sent</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-        <div class="card stats-card bg-secondary text-white h-100">
-            <div class="card-body py-4">
-                <i class="fas fa-award fa-2x mb-3" style="opacity: 0.9;"></i>
-                <h5 class="mb-2" style="font-weight: 600; opacity: 0.95;">Certificates</h5>
-                <h2 class="mb-0" style="font-weight: 800;">{{ stats.certificates_issued }}</h2>
-            </div>
-        </div>
+    <div class="stat-card">
+        <div class="stat-icon stat-icon-rose"><i class="bi bi-award-fill"></i></div>
+        <div class="stat-value">{{ stats.certificates_issued }}</div>
+        <div class="stat-label">Certificates</div>
     </div>
 </div>
 
-<!-- Add Participant Form -->
+<!-- ═══ Add Participant (Admin) ═══ -->
 {% if current_user.is_authenticated and current_user.is_admin() %}
-<div class="card add-participant-card">
-    <div class="card-body p-3">
-        <form method="POST" action="{{ url_for('add_participant', event_id=event.id) }}" class="row g-3 align-items-center">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <div class="col-md-5">
-                <input type="text" class="form-control" name="name" placeholder="Participant Name" required>
-            </div>
-            <div class="col-md-5">
-                <input type="email" class="form-control" name="email" placeholder="Email Address" required>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-plus-lg me-1"></i> Add
-                </button>
-            </div>
-        </form>
-    </div>
+<div class="add-row">
+    <form method="POST" action="{{ url_for('add_participant', event_id=event.id) }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="col-md-5">
+            <label class="form-label" style="font-size:0.8rem;">Participant Name</label>
+            <input type="text" class="form-control" name="name" placeholder="Enter full name" required>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label" style="font-size:0.8rem;">Email Address</label>
+            <input type="email" class="form-control" name="email" placeholder="email@example.com" required>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-plus-lg me-1"></i>Add
+            </button>
+        </div>
+    </form>
 </div>
 {% endif %}
 
-<!-- Bulk Actions Form -->
+<!-- ═══ Bulk Actions ═══ -->
 {% if current_user.is_authenticated and current_user.is_admin() %}
 <form id="bulkActionsForm" method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-3">
-        <h3 class="mb-0">
-            <i class="bi bi-people me-2" style="color: var(--primary-color);"></i>
-            Participants (<span id="participantCount">{{ participants|length }}</span>)
-        </h3>
-
-        <div class="d-flex flex-wrap gap-2">
+    <!-- Toolbar -->
+    <div class="toolbar-section">
+        <div class="toolbar-title">
+            <i class="bi bi-people-fill" style="color:var(--primary);"></i>
+            Participants <span class="count-chip" id="participantCount">{{ participants|length }}</span>
+        </div>
+        <div class="bulk-bar">
             <button type="button" class="btn btn-outline-primary" onclick="toggleSelectAll()">
-                <i class="bi bi-check2-square me-1"></i> Select All
+                <i class="bi bi-check2-square me-1"></i>Select All
             </button>
-            <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning">
-                <i class="bi bi-envelope me-1"></i> Send to Selected
+            <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning text-white">
+                <i class="bi bi-envelope me-1"></i>Send Email
+            </button>
+            <button type="submit" formaction="{{ url_for('send_reminder', event_id=event.id) }}" class="btn btn-primary"
+                    onclick="return confirm('Send reminder email to ' + (document.querySelectorAll('.participant-checkbox:checked').length || 'ALL') + ' participant(s)?');">
+                <i class="bi bi-bell me-1"></i>Send Reminder
             </button>
             <a href="{{ url_for('certificate_preview_page', event_id=event.id) }}" class="btn btn-success">
-                <i class="bi bi-award me-1"></i> Certificates
+                <i class="bi bi-award me-1"></i>Certificates
             </a>
-            <button type="submit" formaction="{{ url_for('bulk_resend_tickets') }}" class="btn btn-info">
-                <i class="bi bi-envelope-paper me-1"></i> Resend to Selected
+            <button type="submit" formaction="{{ url_for('bulk_resend_tickets') }}" class="btn btn-info text-white">
+                <i class="bi bi-envelope-paper me-1"></i>Resend Ticket
             </button>
             <button type="submit" formaction="{{ url_for('bulk_delete_participants') }}" class="btn btn-danger">
-                <i class="bi bi-trash me-1"></i> Delete Selected
+                <i class="bi bi-trash3 me-1"></i>Delete Selected
             </button>
         </div>
     </div>
 
-    <!-- Search and Filter -->
-    <div class="search-section">
-        <div class="row g-3">
+    <!-- Filter -->
+    <div class="filter-bar">
+        <div class="row g-2 align-items-center">
             <div class="col-md-5">
                 <div class="input-group">
-                    <span class="input-group-text">
-                        <i class="bi bi-search"></i>
-                    </span>
-                    <input type="text" class="search-input" id="searchInput"
-                           placeholder="Search by name, email, ticket number, status..."
-                           onkeyup="searchParticipants()">
-                    <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Clear Search">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
+                    <span class="input-group-text bg-white" style="border-radius:var(--r-lg) 0 0 var(--r-lg);"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0" id="searchInput"
+                           placeholder="Search name, email, ticket..."
+                           onkeyup="searchParticipants()" style="border-radius:0 var(--r-lg) var(--r-lg) 0;">
                 </div>
             </div>
-            <div class="col-md-4">
-                <select class="filter-select" id="checkinFilter" onchange="searchParticipants()">
-                    <option value="">All Check-in Status</option>
+            <div class="col-md-3">
+                <select class="form-select" id="checkinFilter" onchange="searchParticipants()">
+                    <option value="">All Check-in</option>
                     <option value="checked-in">Checked In</option>
                     <option value="pending">Pending</option>
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="filter-select" id="emailFilter" onchange="searchParticipants()">
-                    <option value="">All Email Status</option>
-                    <option value="sent">Email Sent</option>
-                    <option value="not-sent">Email Not Sent</option>
+                <select class="form-select" id="emailFilter" onchange="searchParticipants()">
+                    <option value="">All Emails</option>
+                    <option value="sent">Sent</option>
+                    <option value="not-sent">Not Sent</option>
                 </select>
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-outline-secondary w-100" type="button" onclick="clearSearch()" title="Clear">
+                    <i class="bi bi-x-lg"></i>
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- Participants Table -->
-    <div class="participants-wrapper">
+    <!-- Table -->
+    <div class="tbl-wrap">
         <div class="table-responsive">
-            <table class="table participants-table" id="participantsTable">
+            <table class="table" id="participantsTable">
                 <thead>
                     <tr>
-                        <th width="40">
-                            <input type="checkbox" id="selectAll" class="form-check-input">
-                        </th>
+                        <th style="width:38px;"><input type="checkbox" id="selectAll" class="form-check-input"></th>
                         <th>Participant</th>
                         <th class="text-center">Ticket #</th>
                         <th class="text-center">Check-in</th>
                         <th class="text-center">Email</th>
                         <th class="text-center">Certificate</th>
-                        <th class="text-center d-none d-md-table-cell">Time</th>
+                        <th class="text-center hide-sm">Time</th>
                         <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for participant in participants %}
-                        <tr class="participant-row" data-name="{{ participant.name|lower }}"
-                            data-email="{{ participant.email|lower }}"
-                            data-ticket="{{ participant.ticket_number|lower }}"
-                            data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
-                            data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
-                            <td>
-                                <input type="checkbox" name="participant_ids" value="{{ participant.id }}" class="form-check-input participant-checkbox">
-                            </td>
-                            <td>
-                                <div class="participant-info">
-                                    <div class="participant-name">{{ participant.name }}</div>
-                                    <div class="participant-email">{{ participant.email }}</div>
-                                </div>
-                            </td>
-                            <td class="text-center">
-                                <code class="ticket-number">{{ participant.ticket_number }}</code>
-                            </td>
-                            <td class="text-center">
+                    <tr data-name="{{ participant.name|lower }}"
+                        data-email="{{ participant.email|lower }}"
+                        data-ticket="{{ participant.ticket_number|lower }}"
+                        data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
+                        data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
+                        <td><input type="checkbox" name="selected_participants" value="{{ participant.id }}" class="form-check-input participant-checkbox"></td>
+                        <td>
+                            <div class="p-info">
+                                <span class="p-name">{{ participant.name }}</span>
+                                <span class="p-email">{{ participant.email }}</span>
+                            </div>
+                        </td>
+                        <td class="text-center"><span class="ticket-code">{{ participant.ticket_number }}</span></td>
+                        <td class="text-center">
+                            {% if participant.checked_in %}
+                                <span class="pill pill-success"><i class="bi bi-check-circle-fill"></i> Checked In</span>
+                            {% else %}
+                                <span class="pill pill-warning"><i class="bi bi-clock"></i> Pending</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if participant.email_sent %}
+                                <span class="pill pill-blue"><i class="bi bi-envelope-check"></i> Sent</span>
+                            {% else %}
+                                <span class="pill pill-muted"><i class="bi bi-envelope"></i> Not Sent</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if participant.certificates %}
+                                {% if participant.certificates|length > 1 %}
+                                    <span class="pill pill-info"><i class="bi bi-arrow-clockwise"></i> Reissued ({{ participant.certificates|length }})</span>
+                                {% else %}
+                                    <span class="pill pill-success"><i class="bi bi-award-fill"></i> Issued</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="pill pill-muted"><i class="bi bi-award"></i> Not Issued</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center hide-sm">
+                            {% if participant.checkin_time %}
+                                <span style="font-size:0.75rem;color:var(--text-secondary);">
+                                    <i class="bi bi-box-arrow-in-right text-success"></i>
+                                    {{ participant.checkin_time|ist_ist_time('%m/%d %H:%M') }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <div class="act-group">
                                 {% if participant.checked_in %}
-                                    {% if participant.checked_out %}
-                                        <span class="status-badge checked-out">
-                                            <i class="bi bi-sign-out"></i> Checked Out
-                                        </span>
-                                    {% else %}
-                                        <span class="status-badge checked-in">
-                                            <i class="bi bi-sign-in"></i> Checked In
-                                        </span>
-                                    {% endif %}
+                                <button type="button" class="act act-green" onclick="toggleCheckin({{ participant.id }})" title="Toggle Check-in">
+                                    <i class="bi bi-person-check-fill"></i>
+                                </button>
                                 {% else %}
-                                    <span class="status-badge pending">
-                                        <i class="bi bi-clock"></i> Pending
-                                    </span>
+                                <button type="button" class="act act-ghost" onclick="toggleCheckin({{ participant.id }})" title="Check In">
+                                    <i class="bi bi-person-plus"></i>
+                                </button>
                                 {% endif %}
-                            </td>
-                            <td class="text-center">
-                                {% if participant.email_sent %}
-                                    <span class="email-badge sent">
-                                        <i class="bi bi-envelope-check"></i> Sent
-                                    </span>
-                                {% else %}
-                                    <span class="email-badge not-sent">
-                                        <i class="bi bi-envelope"></i> Not Sent
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                {% if participant.certificates %}
-                                    {% set latest_cert = participant.certificates[-1] %}
-                                    {% if participant.certificates|length > 1 %}
-                                        <span class="cert-badge reissued">
-                                            <i class="bi bi-arrow-clockwise"></i> Reissued ({{ participant.certificates|length }})
-                                        </span>
-                                    {% else %}
-                                        <span class="cert-badge issued">
-                                            <i class="bi bi-award"></i> Issued
-                                        </span>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="cert-badge not-issued">
-                                        <i class="bi bi-award"></i> Not Issued
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center d-none d-md-table-cell">
-                                {% if participant.checkin_time %}
-                                    <div class="time-display">
-                                        <div class="time-item">
-                                            <i class="bi bi-sign-in text-success"></i>
-                                            <small>{{ participant.checkin_time|ist_ist_time('%m/%d %H:%M') }}</small>
-                                        </div>
-                                    {% if participant.check_out_time %}
-                                        <div class="time-item">
-                                            <i class="bi bi-sign-out text-warning"></i>
-                                            <small>{{ participant.check_out_time|ist_ist_time('%m/%d %H:%M') }}</small>
-                                        </div>
-                                    {% endif %}
+
+                                <div class="dropdown">
+                                    <button type="button" class="act act-amber dropdown-toggle" data-bs-toggle="dropdown" title="Certificate"><i class="bi bi-award"></i></button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" href="{{ url_for('preview_single_certificate', participant_id=participant.id) }}" target="_blank"><i class="bi bi-eye me-2"></i>Preview</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="resendCertificate({{ participant.id }}, '{{ participant.name|replace("'", "\\'") }}')"><i class="bi bi-send me-2"></i>Resend</a></li>
+                                    </ul>
                                 </div>
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <div class="d-flex justify-content-center gap-1">
-                                    <!-- Check-in/out toggle -->
-                                    {% if participant.checked_in %}
-                                        <button type="button" class="action-btn btn-success"
-                                                onclick="toggleCheckin({{ participant.id }})"
-                                                title="Check Out">
-                                            <i class="bi bi-person-check"></i>
-                                        </button>
-                                    {% else %}
-                                        <button type="button" class="action-btn btn-outline-success"
-                                                onclick="toggleCheckin({{ participant.id }})"
-                                                title="Check In">
-                                            <i class="bi bi-person-plus"></i>
-                                        </button>
-                                    {% endif %}
 
-                                    <!-- Certificate dropdown -->
-                                    <div class="dropdown">
-                                        <button type="button" class="action-btn btn-warning dropdown-toggle"
-                                                data-bs-toggle="dropdown"
-                                                title="Certificate Options">
-                                            <i class="bi bi-award"></i>
-                                        </button>
-                                        <ul class="dropdown-menu dropdown-menu-end">
-                                            <li>
-                                                <a class="dropdown-item" href="{{ url_for('preview_single_certificate', participant_id=participant.id) }}" target="_blank">
-                                                    <i class="bi bi-eye me-2"></i> Preview
-                                                </a>
-                                            </li>
-                                            <li>
-                                                <a class="dropdown-item" href="#" onclick="resendCertificate({{ participant.id }}, '{{ participant.name|replace("'", "\\'") }}')">
-                                                    <i class="bi bi-send me-2"></i> Resend
-                                                </a>
-                                            </li>
-                                        </ul>
-                                    </div>
-
-                                    <!-- Edit -->
-                                    <a href="{{ url_for('edit_participant', participant_id=participant.id) }}"
-                                       class="action-btn btn-info"
-                                       title="Edit Participant">
-                                        <i class="bi bi-pencil"></i>
-                                    </a>
-
-                                    <!-- Resend Ticket -->
-                                    <button type="button" class="action-btn btn-primary"
-                                            onclick="resendTicket({{ participant.id }})"
-                                            title="Resend Ticket">
-                                        <i class="bi bi-envelope"></i>
-                                    </button>
-
-                                    <!-- Delete -->
-                                    <button type="button" class="action-btn btn-danger"
-                                            onclick="deleteParticipant({{ participant.id }}, '{{ participant.name|replace("'", "\\'") }}')"
-                                            title="Delete Participant">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
+                                <a href="{{ url_for('edit_participant', participant_id=participant.id) }}" class="act act-sky" title="Edit"><i class="bi bi-pencil"></i></a>
+                                <button type="button" class="act act-blue" onclick="resendTicket({{ participant.id }})" title="Resend Ticket"><i class="bi bi-envelope"></i></button>
+                                <button type="button" class="act act-red" onclick="deleteParticipant({{ participant.id }}, '{{ participant.name|replace("'", "\\'") }}')" title="Delete"><i class="bi bi-trash3"></i></button>
+                            </div>
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
 
-            <!-- Pagination -->
-            {% if stats.total_pages > 1 %}
-            <nav class="d-flex justify-content-center mt-4" aria-label="Page navigation">
+        <!-- Pagination -->
+        {% if stats.total_pages > 1 %}
+        <div class="paging-section">
+            <nav aria-label="Page navigation">
                 <ul class="pagination mb-0">
                     {% if pagination.has_prev %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.prev_num) }}">
-                            <i class="bi bi-chevron-left"></i>
-                        </a>
-                    </li>
+                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.prev_num) }}"><i class="bi bi-chevron-left"></i></a></li>
                     {% else %}
-                    <li class="page-item disabled">
-                        <span class="page-link"><i class="bi bi-chevron-left"></i></span>
-                    </li>
+                    <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
                     {% endif %}
-
                     {% for page_num in range(1, stats.total_pages + 1) %}
                         {% if page_num == pagination.page %}
-                            <li class="page-item active">
-                                <span class="page-link">{{ page_num }}</span>
-                            </li>
+                        <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
                         {% else %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=page_num) }}">{{ page_num }}</a>
-                            </li>
+                        <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=page_num) }}">{{ page_num }}</a></li>
                         {% endif %}
                     {% endfor %}
-
                     {% if pagination.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.next_num) }}">
-                            <i class="bi bi-chevron-right"></i>
-                        </a>
-                    </li>
+                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.next_num) }}"><i class="bi bi-chevron-right"></i></a></li>
                     {% else %}
-                    <li class="page-item disabled">
-                        <span class="page-link"><i class="bi bi-chevron-right"></i></span>
-                    </li>
+                    <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
                     {% endif %}
                 </ul>
             </nav>
-
-            <div class="text-center text-muted mt-2">
-                <small>Showing {{ (stats.page - 1) * stats.per_page + 1 }} to {{ min(stats.page * stats.per_page, stats.total) }} of {{ stats.total }} participants</small>
-            </div>
-            {% endif %}
+            <small class="text-muted">
+                Showing {{ (stats.page - 1) * stats.per_page + 1 }} to {{ [stats.page * stats.per_page, stats.total] | min }} of {{ stats.total }} participants
+            </small>
         </div>
+        {% endif %}
     </div>
 </form>
+{% endif %}
 
+<!-- Empty state when no participants -->
 {% if not participants %}
-<div class="text-center py-5">
-    <div style="font-size: 4rem; color: #d1d5db; margin-bottom: 1.5rem;">
-        <i class="bi bi-people"></i>
-    </div>
-    <h3 class="mb-3" style="color: var(--text-secondary);">No participants yet</h3>
-    <p class="text-muted">
+<div class="empty-box">
+    <div class="empty-box-icon"><i class="bi bi-people"></i></div>
+    <h4 class="fw-bold mb-2">No participants yet</h4>
+    <p class="text-muted mb-3" style="max-width:400px;margin:0 auto;">
         {% if current_user.is_authenticated and current_user.is_admin() %}
-            Add participants manually above or <a href="{{ url_for('upload_participants', event_id=event_id) }}" class="text-primary text-decoration-none fw-bold">upload a CSV file</a>.
+            Add participants using the form above or
+            <a href="{{ url_for('upload_participants', event_id=event.id) }}" class="fw-bold text-decoration-none" style="color:var(--primary);">upload a CSV file</a>.
         {% else %}
             Participants will appear here once added by administrators.
         {% endif %}
@@ -869,257 +666,132 @@
 </div>
 {% endif %}
 
-<script>
-// Toggle check-in/check-out via AJAX
-function toggleCheckin(participantId) {
-    fetch(`/participant/${participantId}/checkin`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            redirect: false
-        })
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Failed to update check-in status: ' + error.message);
-    });
-}
-
-// Resend ticket
-function resendTicket(participantId) {
-    if (confirm('Resend ticket to this participant?')) {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/participant/${participantId}/resend_ticket`;
-
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrf_token';
-        csrfInput.value = csrfToken;
-        form.appendChild(csrfInput);
-
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-// Resend certificate
-function resendCertificate(participantId, participantName) {
-    if (confirm(`Resend certificate to ${participantName}?`)) {
-        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-        const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-
-        fetch(`/participant/${participantId}/resend_certificate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
-            },
-            body: JSON.stringify({})
-        })
-        .then(response => {
-            if (response.status === 401 || response.status === 403) {
-                throw new Error('Access denied. Admin privileges required.');
-            }
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status} ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // Show success toast
-                const toast = document.createElement('div');
-                toast.className = 'position-fixed';
-                toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-                toast.innerHTML = `
-                    <div class="card shadow-lg" style="border-left: 4px solid #10b981;">
-                        <div class="card-body p-3 d-flex align-items-center">
-                            <i class="bi bi-check-circle-fill text-success me-2 fs-5"></i>
-                            <span class="fw-semibold ms-2">Certificate resent to ${participantName}!</span>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 4000);
-            } else {
-                alert('Failed to resend certificate: ' + (data.message || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to resend certificate: ' + error.message);
-        });
-    }
-}
-
-// Delete participant
-function deleteParticipant(participantId, participantName) {
-    if (confirm(`Delete ${participantName}? This action cannot be undone.`)) {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/participant/${participantId}/delete`;
-
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrf_token';
-        csrfInput.value = csrfToken;
-        form.appendChild(csrfInput);
-
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-// Select all functionality
-function toggleSelectAll() {
-    const selectAll = document.getElementById('selectAll');
-    const checkboxes = document.querySelectorAll('.participant-checkbox');
-
-    checkboxes.forEach(cb => {
-        cb.checked = selectAll.checked;
-    });
-}
-
-document.getElementById('selectAll').addEventListener('change', function() {
-    const checkboxes = document.querySelectorAll('.participant-checkbox');
-    const checkedBoxes = document.querySelectorAll('.participant-checkbox:checked');
-    const selectAll = document.getElementById('selectAll');
-
-    if (checkedBoxes.length === 0) {
-        selectAll.indeterminate = false;
-        selectAll.checked = false;
-    } else if (checkedBoxes.length === allCheckboxes.length) {
-        selectAll.indeterminate = false;
-        selectAll.checked = true;
-    } else {
-        selectAll.indeterminate = true;
-    }
-});
-
-// Update select all state when individual checkboxes change
-document.querySelectorAll('.participant-checkbox').forEach(cb => {
-    cb.addEventListener('change', function() {
-        const allCheckboxes = document.querySelectorAll('.participant-checkbox');
-        const checkedBoxes = document.querySelectorAll('.participant-checkbox:checked');
-        const selectAll = document.getElementById('selectAll');
-
-        if (checkedBoxes.length === 0) {
-            selectAll.indeterminate = false;
-            selectAll.checked = false;
-        } else if (checkedBoxes.length === allCheckboxes.length) {
-            selectAll.indeterminate = false;
-            selectAll.checked = true;
-        } else {
-            selectAll.indeterminate = true;
-        }
-    });
-});
-
-// Confirm bulk actions
-function confirmBulkAction(action) {
-    const selectedBoxes = document.querySelectorAll('.participant-checkbox:checked');
-    if (selectedBoxes.length === 0) {
-        alert('Please select at least one participant!');
-        return false;
-    }
-
-    if (action === 'delete') {
-        return confirm(`Are you sure you want to ${action} ${selectedBoxes.length} selected participants? This action cannot be undone.`);
-    }
-
-    return confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${selectedBoxes.length} selected participants?`);
-}
-
-// Delete event confirmation
-function confirmDeleteEvent() {
-    const eventName = "{{ event.name }}";
-    const participantCount = {{ stats.total }};
-
-    if (confirm(`⚠️ WARNING: This will permanently delete entire event "${eventName}" and ALL related data including:\n\n• ${participantCount} participant${participantCount !== 1 ? 's' : ''}\n• All certificates\n• All attendance records\n• Event configuration\n\nThis action CANNOT be undone!\n\nType "DELETE" below to confirm:`)) {
-        const userInput = prompt('Type "DELETE" to confirm:');
-        if (userInput === 'DELETE') {
-            document.getElementById('deleteEventForm').submit();
-        } else {
-            alert('Event deletion cancelled - incorrect confirmation text.');
-        }
-    }
-}
-
-// Participant search functionality
-function searchParticipants() {
-    const searchInput = document.getElementById('searchInput').value.toLowerCase();
-    const checkinFilter = document.getElementById('checkinFilter').value;
-    const emailFilter = document.getElementById('emailFilter').value;
-    const table = document.getElementById('participantsTable');
-    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
-
-    let visibleCount = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const name = row.getAttribute('data-name') || '';
-        const email = row.getAttribute('data-email') || '';
-        const ticket = row.getAttribute('data-ticket') || '';
-        const checkinStatus = row.getAttribute('data-checkin') || '';
-        const emailStatus = row.getAttribute('data-email-sent') || '';
-
-        const matchesText = searchInput === '' ||
-                           name.includes(searchInput) ||
-                           email.includes(searchInput) ||
-                           ticket.includes(searchInput);
-
-        const matchesCheckin = checkinFilter === '' || checkinStatus === checkinFilter;
-        const matchesEmail = emailFilter === '' || emailStatus === emailFilter;
-
-        if (matchesText && matchesCheckin && matchesEmail) {
-            row.style.display = '';
-            visibleCount++;
-        } else {
-            row.style.display = 'none';
-        }
-    }
-
-    const header = document.querySelector('h3');
-    if (header) {
-        const totalCount = {{ participants|length }};
-        const countSpan = document.getElementById('participantCount');
-        if (visibleCount !== totalCount) {
-            countSpan.textContent = `${visibleCount} of ${totalCount}`;
-        } else {
-            countSpan.textContent = totalCount;
-        }
-    }
-}
-
-// Clear search function
-function clearSearch() {
-    document.getElementById('searchInput').value = '';
-    document.getElementById('checkinFilter').value = '';
-    document.getElementById('emailFilter').value = '';
-    searchParticipants();
-}
-</script>
-
-<!-- Hidden form for event deletion -->
-<form id="deleteEventForm" method="POST" action="{{ url_for('delete_event', event_id=event.id) }}" style="display: none;">
+<!-- Hidden delete event form -->
+<form id="deleteEventForm" method="POST" action="{{ url_for('delete_event', event_id=event.id) }}" style="display:none;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 </form>
+
+<script>
+(function() {
+    'use strict';
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+    window.toggleCheckin = function(pid) {
+        fetch('/participant/' + pid + '/checkin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ redirect: false })
+        })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(d) { if (d.success) location.reload(); else toast(d.message || 'Error', 'danger'); })
+        .catch(function(e) { toast('Failed: ' + e.message, 'danger'); });
+    };
+
+    window.resendTicket = function(pid) {
+        if (!confirm('Resend ticket to this participant?')) return;
+        submitForm('/participant/' + pid + '/resend_ticket');
+    };
+
+    window.resendCertificate = function(pid, name) {
+        if (!confirm('Resend certificate to ' + name + '?')) return;
+        fetch('/participant/' + pid + '/resend_certificate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+            body: JSON.stringify({})
+        })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(d) { if (d.success) toast('Certificate resent to ' + name + '!', 'success'); else toast(d.message || 'Failed', 'danger'); })
+        .catch(function(e) { toast('Failed: ' + e.message, 'danger'); });
+    };
+
+    window.deleteParticipant = function(pid, name) {
+        if (!confirm('Delete ' + name + '? This cannot be undone.')) return;
+        submitForm('/participant/' + pid + '/delete');
+    };
+
+    window.confirmDeleteEvent = function() {
+        var name = "{{ event.name|replace('"', '\\"') }}";
+        var count = {{ stats.total }};
+        if (!confirm('Delete "' + name + '" and ALL ' + count + ' participant(s), certificates, and records?\n\nThis CANNOT be undone.')) return;
+        var input = prompt('Type "DELETE" to confirm:');
+        if (input === 'DELETE') document.getElementById('deleteEventForm').submit();
+        else alert('Cancelled — incorrect confirmation.');
+    };
+
+    function submitForm(action) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = action;
+        form.innerHTML = '<input type="hidden" name="csrf_token" value="' + csrf + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    /* Select all */
+    var selectAll = document.getElementById('selectAll');
+    function boxes() { return document.querySelectorAll('.participant-checkbox'); }
+    function checked() { return document.querySelectorAll('.participant-checkbox:checked'); }
+
+    window.toggleSelectAll = function() {
+        var newState = checked().length < boxes().length;
+        boxes().forEach(function(cb) { cb.checked = newState; });
+        updateSelectAll();
+    };
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            boxes().forEach(function(cb) { cb.checked = selectAll.checked; });
+        });
+    }
+
+    function updateSelectAll() {
+        if (!selectAll) return;
+        var all = boxes().length, ch = checked().length;
+        selectAll.checked = ch === all && all > 0;
+        selectAll.indeterminate = ch > 0 && ch < all;
+    }
+
+    boxes().forEach(function(cb) { cb.addEventListener('change', updateSelectAll); });
+
+    /* Search */
+    window.searchParticipants = function() {
+        var q = document.getElementById('searchInput').value.toLowerCase();
+        var cf = document.getElementById('checkinFilter').value;
+        var ef = document.getElementById('emailFilter').value;
+        var rows = document.querySelectorAll('#participantsTable tbody tr');
+        var visible = 0;
+        rows.forEach(function(row) {
+            var mt = !q || [row.dataset.name, row.dataset.email, row.dataset.ticket].some(function(v) { return v && v.indexOf(q) !== -1; });
+            var mc = !cf || row.dataset.checkin === cf;
+            var me = !ef || row.dataset.emailSent === ef;
+            var show = mt && mc && me;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+        var el = document.getElementById('participantCount');
+        var total = {{ participants|length }};
+        el.textContent = visible !== total ? visible + ' / ' + total : total;
+    };
+
+    window.clearSearch = function() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('checkinFilter').value = '';
+        document.getElementById('emailFilter').value = '';
+        searchParticipants();
+    };
+
+    /* Toast */
+    function toast(msg, type) {
+        var colors = { success: '#16a34a', danger: '#ef4444', info: '#0ea5e9' };
+        var icons = { success: 'check-circle-fill', danger: 'exclamation-triangle-fill', info: 'info-circle-fill' };
+        var el = document.createElement('div');
+        el.className = 'toast-msg';
+        el.innerHTML = '<div style="background:white;border-radius:0.75rem;box-shadow:0 8px 24px rgba(0,0,0,0.1);border-left:4px solid ' + (colors[type] || colors.info) + ';padding:0.875rem 1rem;display:flex;align-items:center;gap:0.6rem;">' +
+            '<i class="bi bi-' + (icons[type] || icons.info) + '" style="color:' + (colors[type] || colors.info) + ';font-size:1.15rem;"></i>' +
+            '<span style="font-weight:600;font-size:0.85rem;">' + msg + '</span></div>';
+        document.body.appendChild(el);
+        setTimeout(function() { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(function() { el.remove(); }, 300); }, 4000);
+    }
+})();
+</script>
 {% endblock %}
