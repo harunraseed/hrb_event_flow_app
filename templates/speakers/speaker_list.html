@@ -67,7 +67,8 @@
     border: 2px solid var(--brand-200);
     overflow: hidden;
 }
-.spk-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.spk-avatar img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+.spk-avatar { position: relative; }
 .spk-name { font-weight: 700; font-size: 1rem; color: var(--text); margin: 0; }
 .spk-role { font-size: 0.8rem; color: var(--text-secondary); margin: 0; }
 .spk-org { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
@@ -199,7 +200,7 @@
                 {% if speaker.photo_url %}
                     <img src="{{ speaker.photo_url }}" alt="{{ speaker.name }}">
                 {% else %}
-                    {{ speaker.name[0]|upper }}
+                    <span>{{ speaker.name[0]|upper }}</span>
                 {% endif %}
             </div>
             <div>
@@ -246,6 +247,13 @@
                 <a href="{{ url_for('speaker_edit', speaker_id=speaker.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
                     <i class="bi bi-pencil"></i>
                 </a>
+                <form method="POST" action="{{ url_for('speaker_delete', speaker_id=speaker.id) }}" style="display:inline;"
+                      onsubmit="return confirm('Delete speaker {{ speaker.name|replace("'", "\\'") }}? This cannot be undone.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                        <i class="bi bi-trash3"></i>
+                    </button>
+                </form>
             </div>
         </div>
     </div>

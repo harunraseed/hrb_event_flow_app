@@ -64,6 +64,11 @@
                                     <i class="bi bi-grid-1x2 me-1"></i> Dashboard
                                 </a>
                             </li>
+                            <li class="nav-item">
+                                <a class="nav-link {% if request.endpoint == 'analytics_dashboard' %}active{% endif %}" href="{{ url_for('analytics_dashboard') }}">
+                                    <i class="bi bi-bar-chart-line me-1"></i> Analytics
+                                </a>
+                            </li>
                         {% endif %}
                     {% endif %}
                 </ul>

@@ -39,7 +39,7 @@ except ImportError:
 import qrcode
 from io import BytesIO
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Initialize storage manager after loading environment
 storage_manager = StorageManager()
@@ -753,7 +753,7 @@ class Event(db.Model):
     date = db.Column(db.Date, nullable=False)
     time = db.Column(db.Time)  # Event start time
     event_end_time = db.Column(db.Time)  # Event end time
-    logo = db.Column(db.Text)  # Logo as base64 string
+    logo = db.Column(db.Text)  # Logo URL (Supabase Storage)
     location = db.Column(db.Text)  # Event location
     google_maps_url = db.Column(db.Text)  # Google Maps link
     description = db.Column(db.Text)
@@ -1926,6 +1926,254 @@ def admin_dashboard():
     
     return render_template('auth/admin_dashboard.html', stats=stats, pending_actions=pending_actions)
 
+
+# ── Analytics Dashboard ───────────────────────────────────────
+@app.route('/admin/analytics')
+@require_admin
+def analytics_dashboard():
+    """Comprehensive analytics dashboard with participant behavior insights."""
+    from sqlalchemy import func, case, distinct, extract
+    from collections import Counter, defaultdict
+    
+    # ── 1. Overview KPIs ──
+    total_events = Event.query.count()
+    total_participants = Participant.query.count()
+    total_checkins = Participant.query.filter_by(checked_in=True).count()
+    total_certificates = Certificate.query.count()
+    total_feedbacks = EventFeedback.query.count()
+    total_speakers = Speaker.query.filter_by(is_active=True).count()
+    
+    checkin_rate = round((total_checkins / total_participants * 100), 1) if total_participants > 0 else 0
+    avg_rating = db.session.query(func.avg(EventFeedback.rating)).scalar()
+    avg_rating = round(float(avg_rating), 1) if avg_rating else 0
+    
+    overview = {
+        'total_events': total_events,
+        'total_participants': total_participants,
+        'total_checkins': total_checkins,
+        'checkin_rate': checkin_rate,
+        'total_certificates': total_certificates,
+        'total_feedbacks': total_feedbacks,
+        'total_speakers': total_speakers,
+        'avg_rating': avg_rating,
+    }
+    
+    # ── 2. Events Over Time (monthly) ──
+    events_by_month = db.session.query(
+        func.to_char(Event.date, 'YYYY-MM').label('month'),
+        func.count(Event.id)
+    ).group_by('month').order_by('month').all()
+    
+    events_timeline = {
+        'labels': [r[0] for r in events_by_month],
+        'data': [r[1] for r in events_by_month],
+    }
+    
+    # ── 3. Registrations vs Check-ins per Event (top 15 recent) ──
+    recent_events = Event.query.order_by(Event.date.desc()).limit(15).all()
+    event_comparison = {'labels': [], 'registered': [], 'checked_in': [], 'no_show': []}
+    for evt in reversed(recent_events):
+        reg = Participant.query.filter_by(event_id=evt.id).count()
+        cin = Participant.query.filter_by(event_id=evt.id, checked_in=True).count()
+        short_name = evt.name[:25] + ('…' if len(evt.name) > 25 else '')
+        event_comparison['labels'].append(short_name)
+        event_comparison['registered'].append(reg)
+        event_comparison['checked_in'].append(cin)
+        event_comparison['no_show'].append(reg - cin)
+    
+    # ── 4. Check-in Rate by Event ──
+    checkin_by_event = []
+    for evt in Event.query.order_by(Event.date.desc()).limit(20).all():
+        reg = Participant.query.filter_by(event_id=evt.id).count()
+        cin = Participant.query.filter_by(event_id=evt.id, checked_in=True).count()
+        rate = round(cin / reg * 100, 1) if reg > 0 else 0
+        checkin_by_event.append({'name': evt.name[:30], 'rate': rate, 'date': evt.date.strftime('%b %d, %Y')})
+    
+    # ── 5. Participant Behavior Analytics ──
+    # All participant emails with their event counts and check-in counts
+    participant_data = db.session.query(
+        Participant.email,
+        func.count(Participant.id).label('total_registrations'),
+        func.sum(case((Participant.checked_in == True, 1), else_=0)).label('total_checkins')
+    ).group_by(Participant.email).all()
+    
+    unique_participants = len(participant_data)
+    
+    # Classify participants
+    returning_participants = 0     # Registered for 2+ events
+    loyal_participants = 0         # Always check in (100% rate, 2+ events)
+    one_time_participants = 0      # Registered once only
+    ghost_participants = 0         # Registered but NEVER checked in (any event)
+    occasional_no_shows = 0        # Check in sometimes, miss sometimes (2+ events)
+    
+    returning_emails = []
+    ghost_emails = []
+    events_per_participant = []
+    
+    for row in participant_data:
+        email = row[0]
+        total_reg = int(row[1])
+        total_cin = int(row[2])
+        events_per_participant.append(total_reg)
+        
+        if total_reg == 1:
+            one_time_participants += 1
+            if total_cin == 0:
+                ghost_participants += 1
+                ghost_emails.append(email)
+        else:
+            returning_participants += 1
+            returning_emails.append(email)
+            if total_cin == total_reg:
+                loyal_participants += 1
+            elif total_cin == 0:
+                ghost_participants += 1
+                ghost_emails.append(email)
+            else:
+                occasional_no_shows += 1
+    
+    # No-show stats
+    total_no_shows = total_participants - total_checkins
+    no_show_rate = round(total_no_shows / total_participants * 100, 1) if total_participants > 0 else 0
+    
+    avg_events_per_participant = round(sum(events_per_participant) / len(events_per_participant), 1) if events_per_participant else 0
+    
+    participant_behavior = {
+        'unique_participants': unique_participants,
+        'returning_participants': returning_participants,
+        'one_time_participants': one_time_participants,
+        'loyal_participants': loyal_participants,
+        'ghost_participants': ghost_participants,
+        'occasional_no_shows': occasional_no_shows,
+        'total_no_shows': total_no_shows,
+        'no_show_rate': no_show_rate,
+        'returning_rate': round(returning_participants / unique_participants * 100, 1) if unique_participants > 0 else 0,
+        'avg_events_per_participant': avg_events_per_participant,
+    }
+    
+    # ── 6. Participant Segments (pie chart) ──
+    participant_segments = {
+        'labels': ['Loyal (always attend)', 'Occasional no-shows', 'One-time attendees', 'Ghost (never attend)'],
+        'data': [loyal_participants, occasional_no_shows, 
+                 one_time_participants - len([e for e in ghost_emails if participant_data and any(r[0] == e and int(r[1]) == 1 for r in participant_data)]),
+                 ghost_participants],
+    }
+    # Recalculate cleaner segments
+    one_time_attended = 0
+    one_time_ghosted = 0
+    for row in participant_data:
+        if int(row[1]) == 1:
+            if int(row[2]) == 1:
+                one_time_attended += 1
+            else:
+                one_time_ghosted += 1
+    
+    participant_segments = {
+        'labels': ['Loyal Returners', 'Occasional No-shows', 'One-time Attended', 'One-time No-show', 'Serial Ghosts'],
+        'data': [loyal_participants, occasional_no_shows, one_time_attended, one_time_ghosted,
+                 len([e for e in ghost_emails if any(r[0] == e and int(r[1]) > 1 for r in participant_data)])],
+    }
+    
+    # ── 7. Retention Trend (returning participants per event, chronological) ──
+    all_events_chrono = Event.query.order_by(Event.date.asc()).all()
+    seen_emails = set()
+    retention_trend = {'labels': [], 'new': [], 'returning': []}
+    for evt in all_events_chrono:
+        participants_in_event = Participant.query.filter_by(event_id=evt.id).all()
+        new_count = 0
+        ret_count = 0
+        for p in participants_in_event:
+            if p.email in seen_emails:
+                ret_count += 1
+            else:
+                new_count += 1
+                seen_emails.add(p.email)
+        short_name = evt.name[:20] + ('…' if len(evt.name) > 20 else '')
+        retention_trend['labels'].append(short_name)
+        retention_trend['new'].append(new_count)
+        retention_trend['returning'].append(ret_count)
+    
+    # ── 8. Day-of-Week Distribution ──
+    dow_data = db.session.query(
+        func.to_char(Event.date, 'Dy').label('dow'),
+        func.count(Event.id)
+    ).group_by('dow').all()
+    
+    # Order days properly
+    day_order = {'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6}
+    dow_sorted = sorted(dow_data, key=lambda x: day_order.get(x[0].strip(), 7))
+    day_distribution = {
+        'labels': [r[0].strip() for r in dow_sorted],
+        'data': [r[1] for r in dow_sorted],
+    }
+    
+    # ── 9. Top Returning Participants ──
+    top_returners = db.session.query(
+        Participant.email,
+        Participant.name,
+        func.count(Participant.id).label('event_count'),
+        func.sum(case((Participant.checked_in == True, 1), else_=0)).label('attended')
+    ).group_by(Participant.email, Participant.name
+    ).having(func.count(Participant.id) > 1
+    ).order_by(func.count(Participant.id).desc()
+    ).limit(15).all()
+    
+    top_returners_list = [{
+        'name': r[1], 'email': r[0], 'events': int(r[2]),
+        'attended': int(r[3]), 'rate': round(int(r[3]) / int(r[2]) * 100)
+    } for r in top_returners]
+    
+    # ── 10. Feedback Rating Distribution ──
+    rating_dist = db.session.query(
+        EventFeedback.rating, func.count(EventFeedback.id)
+    ).group_by(EventFeedback.rating).order_by(EventFeedback.rating).all()
+    
+    rating_distribution = {
+        'labels': [f'{r[0]} Star{"s" if r[0] != 1 else ""}' for r in rating_dist],
+        'data': [r[1] for r in rating_dist],
+    }
+    
+    # ── 11. Email Delivery Stats ──
+    emails_sent = Participant.query.filter_by(email_sent=True).count()
+    emails_pending = total_participants - emails_sent
+    email_stats = {
+        'sent': emails_sent,
+        'pending': emails_pending,
+        'delivery_rate': round(emails_sent / total_participants * 100, 1) if total_participants > 0 else 0,
+    }
+    
+    # ── 12. Top Events by Attendance ──
+    top_events = db.session.query(
+        Event.name, Event.date,
+        func.count(Participant.id).label('total'),
+        func.sum(case((Participant.checked_in == True, 1), else_=0)).label('attended')
+    ).join(Participant, Participant.event_id == Event.id
+    ).group_by(Event.id, Event.name, Event.date
+    ).order_by(func.count(Participant.id).desc()
+    ).limit(10).all()
+    
+    top_events_list = [{
+        'name': r[0], 'date': r[1].strftime('%b %d, %Y'),
+        'total': int(r[2]), 'attended': int(r[3]),
+        'rate': round(int(r[3]) / int(r[2]) * 100) if int(r[2]) > 0 else 0
+    } for r in top_events]
+    
+    return render_template('analytics/dashboard.html',
+        overview=overview,
+        events_timeline=events_timeline,
+        event_comparison=event_comparison,
+        checkin_by_event=checkin_by_event,
+        participant_behavior=participant_behavior,
+        participant_segments=participant_segments,
+        retention_trend=retention_trend,
+        day_distribution=day_distribution,
+        top_returners=top_returners_list,
+        rating_distribution=rating_distribution,
+        email_stats=email_stats,
+        top_events=top_events_list,
+    )
+
+
 # User Management Routes (Super Admin only)
 @app.route('/admin/users')
 @require_superadmin
@@ -2086,9 +2334,8 @@ def create_event():
             # Handle logo upload using storage manager
             logo_url = None
             if form.logo.data:
-                print(f"?? Processing logo upload for file: {form.logo.data.filename}")
-                print(f"?? GitHub Token Available: {bool(storage_manager.github_token)}")
-                print(f"?? Target Repository: {storage_manager.github_repo}")
+                print(f"🔄 Processing logo upload for file: {form.logo.data.filename}")
+                print(f"🔄 Storage type: {storage_manager.storage_type}")
                 try:
                     logo_url = storage_manager.save_image(form.logo.data, folder="logos")
                     if logo_url:
@@ -3742,6 +3989,7 @@ def certificate_assets_manager(event_id):
                          assets=assets)
 
 @app.route('/event/<int:event_id>/certificate_assets/upload', methods=['POST'])
+@login_required
 def upload_certificate_asset(event_id):
     """Upload new certificate asset"""
     try:
@@ -3767,7 +4015,7 @@ def upload_certificate_asset(event_id):
         else:
             return jsonify({'success': False, 'error': 'Invalid asset type'})
         
-        # Upload to GitHub
+        # Upload to cloud storage
         print(f"🔄 Uploading {asset_type} for event {event.name}")
         asset_url = storage_manager.save_image(uploaded_file, folder=folder)
         
@@ -3793,7 +4041,7 @@ def upload_certificate_asset(event_id):
                 'message': f'{asset_type.replace("_", " ").title()} uploaded successfully!'
             })
         else:
-            return jsonify({'success': False, 'error': 'Failed to upload to GitHub'})
+            return jsonify({'success': False, 'error': 'Failed to upload file to storage'})
             
     except Exception as e:
         db.session.rollback()
@@ -3801,6 +4049,7 @@ def upload_certificate_asset(event_id):
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/event/<int:event_id>/certificate_assets/delete', methods=['POST'])
+@login_required
 def delete_certificate_asset(event_id):
     """Delete certificate asset"""
     try:
@@ -3831,8 +4080,12 @@ def delete_certificate_asset(event_id):
         cert_config.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         
-        # Note: We could implement actual GitHub file deletion here if needed
-        # storage_manager.delete_image(old_url)
+        # Delete the actual file from cloud storage
+        if old_url:
+            try:
+                storage_manager.delete_image(old_url)
+            except Exception as del_err:
+                print(f"⚠️ Could not delete old file from storage: {del_err}")
         
         print(f"🗑️ {asset_type} removed from event {event.name}")
         return jsonify({
