@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+{% block title %}Analytics Dashboard - EventFlow{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<style>
+/* ── Analytics Layout ── */
+.ana-header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 1.75rem 2rem; margin-bottom: 1.5rem; }
+.ana-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.ana-header p { color: var(--text-secondary); margin: 0.25rem 0 0; font-size: 0.88rem; }
+
+/* KPI Cards */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.75rem; }
+.kpi-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+    padding: 1.25rem; text-align: center; transition: all 0.2s;
+}
+.kpi-card:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+.kpi-icon { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 0.5rem; font-size: 1.1rem; }
+.kpi-value { font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
+.kpi-label { font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.25rem; }
+.kpi-blue .kpi-icon { background: var(--brand-50); color: var(--primary); }
+.kpi-blue .kpi-value { color: var(--primary); }
+.kpi-green .kpi-icon { background: #f0fdf4; color: #16a34a; }
+.kpi-green .kpi-value { color: #16a34a; }
+.kpi-amber .kpi-icon { background: #fffbeb; color: #f59e0b; }
+.kpi-amber .kpi-value { color: #f59e0b; }
+.kpi-red .kpi-icon { background: #fef2f2; color: #ef4444; }
+.kpi-red .kpi-value { color: #ef4444; }
+.kpi-sky .kpi-icon { background: #f0f9ff; color: #0ea5e9; }
+.kpi-sky .kpi-value { color: #0ea5e9; }
+.kpi-purple .kpi-icon { background: #faf5ff; color: #8b5cf6; }
+.kpi-purple .kpi-value { color: #8b5cf6; }
+
+/* Section titles */
+.section-title {
+    font-size: 1.1rem; font-weight: 700; margin: 2rem 0 1rem; padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--brand-100); display: flex; align-items: center; gap: 0.5rem;
+}
+.section-title i { color: var(--primary); }
+
+/* Chart cards */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.5rem; }
+.chart-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl);
+    padding: 1.5rem; min-height: 360px;
+}
+.chart-card-full { grid-column: 1 / -1; }
+.chart-card h5 { font-size: 0.95rem; font-weight: 700; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.chart-card h5 i { color: var(--primary); font-size: 0.9rem; }
+.chart-wrapper { position: relative; width: 100%; }
+
+/* Behavior insight cards */
+.behavior-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.75rem; }
+.behavior-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+    padding: 1.25rem; display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.behavior-card .bh-value { font-size: 2rem; font-weight: 800; }
+.behavior-card .bh-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-top: 0.15rem; }
+.behavior-card .bh-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; }
+
+/* Table card */
+.table-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl);
+    padding: 1.5rem; margin-bottom: 1.5rem; overflow-x: auto;
+}
+.table-card h5 { font-size: 0.95rem; font-weight: 700; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.table-card h5 i { color: var(--primary); }
+.ana-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ana-table th { font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); padding: 0.6rem 0.75rem; border-bottom: 2px solid var(--border); text-align: left; }
+.ana-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+.ana-table tr:hover { background: #f8fafc; }
+.rate-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; min-width: 60px; }
+.rate-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.rate-good { background: #16a34a; }
+.rate-ok { background: #f59e0b; }
+.rate-bad { background: #ef4444; }
+
+/* Responsive */
+@media (max-width: 991.98px) { .chart-grid { grid-template-columns: 1fr; } }
+@media (max-width: 767.98px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .behavior-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="ana-header">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <h1><i class="bi bi-graph-up me-2" style="color:var(--primary);"></i>Analytics Dashboard</h1>
+            <p>Comprehensive insights into events, participants, and engagement</p>
+        </div>
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- ── KPI Overview ── -->
+<div class="kpi-grid">
+    <div class="kpi-card kpi-blue">
+        <div class="kpi-icon"><i class="bi bi-calendar-event"></i></div>
+        <div class="kpi-value">{{ overview.total_events }}</div>
+        <div class="kpi-label">Total Events</div>
+    </div>
+    <div class="kpi-card kpi-green">
+        <div class="kpi-icon"><i class="bi bi-people"></i></div>
+        <div class="kpi-value">{{ overview.total_participants }}</div>
+        <div class="kpi-label">Registrations</div>
+    </div>
+    <div class="kpi-card kpi-sky">
+        <div class="kpi-icon"><i class="bi bi-check2-circle"></i></div>
+        <div class="kpi-value">{{ overview.total_checkins }}</div>
+        <div class="kpi-label">Total Check-ins</div>
+    </div>
+    <div class="kpi-card kpi-amber">
+        <div class="kpi-icon"><i class="bi bi-percent"></i></div>
+        <div class="kpi-value">{{ overview.checkin_rate }}%</div>
+        <div class="kpi-label">Check-in Rate</div>
+    </div>
+    <div class="kpi-card kpi-purple">
+        <div class="kpi-icon"><i class="bi bi-award"></i></div>
+        <div class="kpi-value">{{ overview.total_certificates }}</div>
+        <div class="kpi-label">Certificates</div>
+    </div>
+    <div class="kpi-card kpi-green">
+        <div class="kpi-icon"><i class="bi bi-mic"></i></div>
+        <div class="kpi-value">{{ overview.total_speakers }}</div>
+        <div class="kpi-label">Active Speakers</div>
+    </div>
+    <div class="kpi-card kpi-sky">
+        <div class="kpi-icon"><i class="bi bi-chat-dots"></i></div>
+        <div class="kpi-value">{{ overview.total_feedbacks }}</div>
+        <div class="kpi-label">Feedbacks</div>
+    </div>
+    <div class="kpi-card kpi-amber">
+        <div class="kpi-icon"><i class="bi bi-star"></i></div>
+        <div class="kpi-value">{{ overview.avg_rating }}<small style="font-size:0.5em">/5</small></div>
+        <div class="kpi-label">Avg Rating</div>
+    </div>
+</div>
+
+<!-- ── PARTICIPANT BEHAVIOR SECTION ── -->
+<h3 class="section-title"><i class="bi bi-person-lines-fill"></i> Participant Behavior Insights</h3>
+
+<div class="behavior-grid">
+    <div class="behavior-card">
+        <div class="bh-value" style="color:var(--primary);">{{ participant_behavior.unique_participants }}</div>
+        <div class="bh-label">Unique Participants</div>
+        <div class="bh-sub">Distinct emails across all events</div>
+    </div>
+    <div class="behavior-card">
+        <div class="bh-value" style="color:#16a34a;">{{ participant_behavior.returning_participants }}</div>
+        <div class="bh-label">Returning Participants</div>
+        <div class="bh-sub">{{ participant_behavior.returning_rate }}% return rate</div>
+    </div>
+    <div class="behavior-card">
+        <div class="bh-value" style="color:#0ea5e9;">{{ participant_behavior.loyal_participants }}</div>
+        <div class="bh-label">Loyal Attendees</div>
+        <div class="bh-sub">2+ events, always check in</div>
+    </div>
+    <div class="behavior-card">
+        <div class="bh-value" style="color:#ef4444;">{{ participant_behavior.ghost_participants }}</div>
+        <div class="bh-label">Ghost Registrants</div>
+        <div class="bh-sub">Register but never attend</div>
+    </div>
+    <div class="behavior-card">
+        <div class="bh-value" style="color:#f59e0b;">{{ participant_behavior.total_no_shows }}</div>
+        <div class="bh-label">Total No-Shows</div>
+        <div class="bh-sub">{{ participant_behavior.no_show_rate }}% no-show rate</div>
+    </div>
+    <div class="behavior-card">
+        <div class="bh-value" style="color:#8b5cf6;">{{ participant_behavior.avg_events_per_participant }}</div>
+        <div class="bh-label">Avg Events / Person</div>
+        <div class="bh-sub">Engagement frequency</div>
+    </div>
+</div>
+
+<!-- Behavior Charts -->
+<div class="chart-grid">
+    <div class="chart-card">
+        <h5><i class="bi bi-pie-chart"></i> Participant Segments</h5>
+        <div class="chart-wrapper"><canvas id="segmentsChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <h5><i class="bi bi-arrow-repeat"></i> New vs Returning (per Event)</h5>
+        <div class="chart-wrapper"><canvas id="retentionChart"></canvas></div>
+    </div>
+</div>
+
+<!-- Top Returners Table -->
+{% if top_returners %}
+<div class="table-card">
+    <h5><i class="bi bi-trophy"></i> Top Returning Participants</h5>
+    <table class="ana-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Events</th>
+                <th>Attended</th>
+                <th>Rate</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in top_returners %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ p.name }}</strong></td>
+                <td style="color:var(--text-secondary);">{{ p.email }}</td>
+                <td>{{ p.events }}</td>
+                <td>{{ p.attended }}</td>
+                <td>{{ p.rate }}%</td>
+                <td style="width:80px;">
+                    <div class="rate-bar">
+                        <div class="rate-bar-fill {{ 'rate-good' if p.rate >= 80 else 'rate-ok' if p.rate >= 50 else 'rate-bad' }}" style="width:{{ p.rate }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- ── EVENT ANALYTICS SECTION ── -->
+<h3 class="section-title"><i class="bi bi-calendar-event"></i> Event Analytics</h3>
+
+<div class="chart-grid">
+    <div class="chart-card chart-card-full">
+        <h5><i class="bi bi-bar-chart-line"></i> Registrations vs Check-ins by Event</h5>
+        <div class="chart-wrapper"><canvas id="eventComparisonChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <h5><i class="bi bi-graph-up-arrow"></i> Events Over Time</h5>
+        <div class="chart-wrapper"><canvas id="eventsTimelineChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <h5><i class="bi bi-calendar3-week"></i> Events by Day of Week</h5>
+        <div class="chart-wrapper"><canvas id="dowChart"></canvas></div>
+    </div>
+</div>
+
+<!-- Check-in Rate Table -->
+{% if checkin_by_event %}
+<div class="table-card">
+    <h5><i class="bi bi-clipboard-data"></i> Check-in Rate by Event</h5>
+    <table class="ana-table">
+        <thead>
+            <tr><th>Event</th><th>Date</th><th>Check-in Rate</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for evt in checkin_by_event %}
+            <tr>
+                <td><strong>{{ evt.name }}</strong></td>
+                <td style="color:var(--text-secondary);">{{ evt.date }}</td>
+                <td>{{ evt.rate }}%</td>
+                <td style="width:120px;">
+                    <div class="rate-bar">
+                        <div class="rate-bar-fill {{ 'rate-good' if evt.rate >= 70 else 'rate-ok' if evt.rate >= 40 else 'rate-bad' }}" style="width:{{ evt.rate }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Top Events Table -->
+{% if top_events %}
+<div class="table-card">
+    <h5><i class="bi bi-trophy"></i> Top Events by Attendance</h5>
+    <table class="ana-table">
+        <thead>
+            <tr><th>#</th><th>Event</th><th>Date</th><th>Registered</th><th>Attended</th><th>Rate</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for evt in top_events %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ evt.name }}</strong></td>
+                <td style="color:var(--text-secondary);">{{ evt.date }}</td>
+                <td>{{ evt.total }}</td>
+                <td>{{ evt.attended }}</td>
+                <td>{{ evt.rate }}%</td>
+                <td style="width:80px;">
+                    <div class="rate-bar">
+                        <div class="rate-bar-fill {{ 'rate-good' if evt.rate >= 70 else 'rate-ok' if evt.rate >= 40 else 'rate-bad' }}" style="width:{{ evt.rate }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- ── ENGAGEMENT SECTION ── -->
+<h3 class="section-title"><i class="bi bi-heart-pulse"></i> Engagement & Delivery</h3>
+
+<div class="chart-grid">
+    <div class="chart-card">
+        <h5><i class="bi bi-star"></i> Feedback Rating Distribution</h5>
+        <div class="chart-wrapper"><canvas id="ratingChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <h5><i class="bi bi-envelope-check"></i> Email Delivery</h5>
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:280px;">
+            <div style="position:relative; width:200px; height:200px;">
+                <canvas id="emailChart"></canvas>
+            </div>
+            <div style="display:flex; gap:1.5rem; margin-top:1rem; font-size:0.85rem;">
+                <span><i class="bi bi-circle-fill me-1" style="color:#16a34a;font-size:0.6rem;"></i> Sent: <strong>{{ email_stats.sent }}</strong></span>
+                <span><i class="bi bi-circle-fill me-1" style="color:#e2e8f0;font-size:0.6rem;"></i> Pending: <strong>{{ email_stats.pending }}</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Charts JavaScript ── -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Detect dark mode
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        || document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+    
+    Chart.defaults.color = textColor;
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.font.size = 12;
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.pointStyleWidth = 10;
+    
+    const palette = ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#0ea5e9', '#ec4899', '#14b8a6'];
+
+    // 1. Participant Segments (Doughnut)
+    new Chart(document.getElementById('segmentsChart'), {
+        type: 'doughnut',
+        data: {
+            labels: {{ participant_segments.labels | tojson }},
+            datasets: [{
+                data: {{ participant_segments.data | tojson }},
+                backgroundColor: ['#16a34a', '#f59e0b', '#2563eb', '#94a3b8', '#ef4444'],
+                borderWidth: 2, borderColor: isDark ? '#1e293b' : '#fff',
+                hoverOffset: 8,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 16 } },
+            },
+            cutout: '55%',
+        }
+    });
+
+    // 2. Retention Trend (Stacked Bar)
+    new Chart(document.getElementById('retentionChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ retention_trend.labels | tojson }},
+            datasets: [
+                { label: 'New', data: {{ retention_trend.new | tojson }}, backgroundColor: '#2563eb', borderRadius: 4 },
+                { label: 'Returning', data: {{ retention_trend.returning | tojson }}, backgroundColor: '#16a34a', borderRadius: 4 },
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: gridColor }, beginAtZero: true } },
+            plugins: { legend: { position: 'top' } },
+        }
+    });
+
+    // 3. Event Comparison (Grouped Bar)
+    new Chart(document.getElementById('eventComparisonChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ event_comparison.labels | tojson }},
+            datasets: [
+                { label: 'Registered', data: {{ event_comparison.registered | tojson }}, backgroundColor: '#2563eb', borderRadius: 4 },
+                { label: 'Checked In', data: {{ event_comparison.checked_in | tojson }}, backgroundColor: '#16a34a', borderRadius: 4 },
+                { label: 'No-Show', data: {{ event_comparison.no_show | tojson }}, backgroundColor: '#ef4444', borderRadius: 4 },
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: { x: { grid: { display: false } }, y: { grid: { color: gridColor }, beginAtZero: true } },
+            plugins: { legend: { position: 'top' } },
+        }
+    });
+
+    // 4. Events Timeline (Line)
+    new Chart(document.getElementById('eventsTimelineChart'), {
+        type: 'line',
+        data: {
+            labels: {{ events_timeline.labels | tojson }},
+            datasets: [{
+                label: 'Events',
+                data: {{ events_timeline.data | tojson }},
+                borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)',
+                tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { x: { grid: { display: false } }, y: { grid: { color: gridColor }, beginAtZero: true } },
+            plugins: { legend: { display: false } },
+        }
+    });
+
+    // 5. Day of Week (Bar)
+    new Chart(document.getElementById('dowChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ day_distribution.labels | tojson }},
+            datasets: [{
+                label: 'Events',
+                data: {{ day_distribution.data | tojson }},
+                backgroundColor: palette.slice(0, {{ day_distribution.data | length }}),
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { x: { grid: { display: false } }, y: { grid: { color: gridColor }, beginAtZero: true } },
+            plugins: { legend: { display: false } },
+        }
+    });
+
+    // 6. Rating Distribution (Bar)
+    const ratingColors = ['#ef4444', '#f59e0b', '#eab308', '#84cc16', '#16a34a'];
+    new Chart(document.getElementById('ratingChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ rating_distribution.labels | tojson }},
+            datasets: [{
+                label: 'Feedbacks',
+                data: {{ rating_distribution.data | tojson }},
+                backgroundColor: ratingColors.slice(0, {{ rating_distribution.data | length }}),
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            scales: { x: { grid: { color: gridColor }, beginAtZero: true }, y: { grid: { display: false } } },
+            plugins: { legend: { display: false } },
+        }
+    });
+
+    // 7. Email Delivery (Doughnut)
+    new Chart(document.getElementById('emailChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Sent', 'Pending'],
+            datasets: [{
+                data: [{{ email_stats.sent }}, {{ email_stats.pending }}],
+                backgroundColor: ['#16a34a', '#e2e8f0'],
+                borderWidth: 0, hoverOffset: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            cutout: '70%',
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: true },
+            },
+        },
+        plugins: [{
+            id: 'centerText',
+            beforeDraw(chart) {
+                const { ctx, width, height } = chart;
+                ctx.save();
+                ctx.font = 'bold 24px Inter, sans-serif';
+                ctx.fillStyle = textColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('{{ email_stats.delivery_rate }}%', width / 2, height / 2);
+                ctx.restore();
+            }
+        }]
+    });
+});
+</script>
+{% endblock %}

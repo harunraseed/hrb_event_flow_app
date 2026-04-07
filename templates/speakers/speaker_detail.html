@@ -20,7 +20,8 @@
     font-size: 2rem; font-weight: 700; border: 3px solid var(--brand-200);
     overflow: hidden;
 }
-.spk-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.spk-profile-avatar img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+.spk-profile-avatar { position: relative; }
 .spk-profile-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .spk-profile-role { font-size: 0.9rem; color: var(--text-secondary); margin: 0.15rem 0; }
 .spk-profile-org { font-size: 0.85rem; color: var(--text-muted); }
@@ -131,7 +132,7 @@
             {% if speaker.photo_url %}
                 <img src="{{ speaker.photo_url }}" alt="{{ speaker.name }}">
             {% else %}
-                {{ speaker.name[0]|upper }}
+                <span>{{ speaker.name[0]|upper }}</span>
             {% endif %}
         </div>
         <div>
