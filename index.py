@@ -587,6 +587,7 @@ class CreateEventForm(FlaskForm):
     community = StringField('Community / Organization', validators=[Optional(), Length(max=100)])
     speakers = TextAreaField('Speakers', validators=[Optional()])
     event_official_link = StringField('Event Official Link', validators=[Optional(), URL()])
+    instructions = TextAreaField('Instructions for Participants', validators=[Optional()])
     submit = SubmitField('Create Event')
 
 class EditParticipantForm(FlaskForm):
@@ -761,6 +762,7 @@ class Event(db.Model):
     community = db.Column(db.String(100))  # Community/Organization
     speakers = db.Column(db.Text)  # Speakers (stored as JSON string)
     event_official_link = db.Column(db.Text)  # Event official website link
+    instructions = db.Column(db.Text)  # Instructions for participants (shown in ticket/reminder emails)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     participants = db.relationship('Participant', backref='event', lazy=True, cascade='all, delete-orphan')
 
@@ -2365,7 +2367,8 @@ def create_event():
                 organizer_name=form.organizer_name.data,
                 community=form.community.data,
                 speakers=form.speakers.data,
-                event_official_link=form.event_official_link.data
+                event_official_link=form.event_official_link.data,
+                instructions=form.instructions.data
             )
             
             db.session.add(event)
@@ -2420,6 +2423,7 @@ def edit_event(event_id):
             event.organizer_name = form.organizer_name.data
             event.community = form.community.data
             event.event_official_link = form.event_official_link.data
+            event.instructions = form.instructions.data
             
             # Handle speakers from dynamic form fields
             speakers = []

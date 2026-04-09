@@ -592,6 +592,28 @@
                         {% endif %}
                     </div>
 
+                    <!-- Instructions for Participants -->
+                    <div class="form-group">
+                        <label class="form-label" for="{{ form.instructions.id }}">
+                            <i class="bi bi-info-circle"></i>
+                            Instructions for Participants
+                        </label>
+                        {{ form.instructions(class="form-control" + (" is-invalid" if form.instructions.errors else ""),
+                                       rows="4",
+                                       placeholder="E.g., Bring your laptop, Dress code: formal, Arrive 15 minutes early, Parking available at Gate 2...") }}
+                        {% if form.instructions.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.instructions.errors %}
+                                    <div><i class="bi bi-exclamation-triangle me-1"></i> {{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i>
+                            These instructions will be included at the bottom of ticket and reminder emails sent to participants. Each line will be shown as a separate instruction.
+                        </div>
+                    </div>
+
                     <!-- Submit Buttons -->
                     <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-submit">

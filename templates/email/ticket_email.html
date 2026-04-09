@@ -82,6 +82,20 @@
                 <p style="margin: 10px 0 0 0; font-size: 11px; color: #999;">An .ics calendar file is also attached to this email for Outlook and Apple Calendar.</p>
             </div>
             {% endif %}
+
+            <!-- Instructions for Participants -->
+            {% if event.instructions %}
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 18px; margin: 20px 0;">
+                <h3 style="margin: 0 0 12px 0; color: #1e40af; font-size: 15px;">📋 Important Instructions</h3>
+                <ul style="margin: 0; padding: 0 0 0 20px; color: #1e3a5f; font-size: 14px; line-height: 1.8;">
+                    {% for line in event.instructions.split('\n') %}
+                        {% if line.strip() %}
+                        <li>{{ line.strip() }}</li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
             
             <p>We look forward to seeing you at the event!</p>
             

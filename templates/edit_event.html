@@ -336,6 +336,19 @@
                                        rows="4", placeholder="Describe your event...") }}
                     </div>
 
+                    <!-- Instructions for Participants -->
+                    <div class="form-group">
+                        <label class="form-label" for="{{ form.instructions.id }}">
+                            <i class="bi bi-info-circle"></i> Instructions for Participants
+                        </label>
+                        {{ form.instructions(class="form-control" + (" is-invalid" if form.instructions.errors else ""),
+                                       rows="4", placeholder="E.g., Bring your laptop, Dress code: formal, Arrive 15 minutes early...") }}
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i>
+                            These instructions will appear in ticket and reminder emails. Each line = one instruction.
+                        </div>
+                    </div>
+
                     <!-- Submit Buttons -->
                     <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-submit">
