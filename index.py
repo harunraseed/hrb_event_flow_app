@@ -106,6 +106,13 @@ app.config['MAIL_SUPPRESS_SEND'] = False
 app.config['MAIL_TIMEOUT'] = 30  # 30 seconds timeout
 app.config['MAIL_MAX_EMAILS'] = 10  # Limit batch size for serverless
 
+# Brevo (Sendinblue) tracking — auto-detect from MAIL_SERVER
+_mail_server = (app.config.get('MAIL_SERVER') or '').lower()
+IS_BREVO_SMTP = ('brevo' in _mail_server or 'sendinblue' in _mail_server)
+BREVO_WEBHOOK_SECRET = os.getenv('BREVO_WEBHOOK_SECRET', '')  # optional shared secret
+if IS_BREVO_SMTP:
+    print("✓ Brevo SMTP detected — email tracking (delivered/opened/clicked) enabled")
+
 # Initialize SQLAlchemy (using SQLite, no psycopg2 needed)
 db = SQLAlchemy(app)
 print("✓ Database initialized successfully")
@@ -347,6 +354,20 @@ def _build_ticket_message(participant, event):
     except Exception:
         pass  # calendar attachment is optional
 
+    # ── Brevo tracking headers ────────────────────────────────────────
+    # When using Brevo SMTP, add custom headers so Brevo webhooks can
+    # correlate delivery/open/click events back to our participant.
+    if IS_BREVO_SMTP:
+        tag = json.dumps({
+            'participant_id': participant.id,
+            'event_id': event.id,
+            'ticket': participant.ticket_number
+        })
+        msg.extra_headers = msg.extra_headers or {}
+        msg.extra_headers['X-Mailin-custom'] = tag
+        # Tag for Brevo dashboard grouping
+        msg.extra_headers['X-Mailin-Tag'] = f"event-{event.id}-ticket"
+
     return msg
 
 
@@ -370,6 +391,7 @@ def send_ticket_email(participant, event, connection=None):
         # Mark sent (caller should commit in bulk)
         participant.email_sent = True
         participant.email_sent_date = datetime.now(timezone.utc)
+        participant.email_delivery_status = 'sent'
         return True
 
     except Exception as e:
@@ -856,14 +878,42 @@ class Participant(db.Model):
     checked_in = db.Column(db.Boolean, default=False)
     checkin_time = db.Column(db.DateTime)
 
-    # Email tracking
+    # Email tracking (basic)
     email_sent = db.Column(db.Boolean, default=False)
     email_sent_date = db.Column(db.DateTime)
+
+    # Brevo advanced email tracking (populated via webhook when using Brevo SMTP)
+    email_message_id = db.Column(db.String(200))      # Brevo message-id for correlation
+    email_delivery_status = db.Column(db.String(30), default='pending')  # pending|sent|delivered|opened|clicked|soft_bounce|hard_bounce|spam|error
+    email_delivered_at = db.Column(db.DateTime)        # When Brevo confirmed delivery
+    email_opened_at = db.Column(db.DateTime)           # First open timestamp
+    email_open_count = db.Column(db.Integer, default=0)  # Total opens
+    email_clicked_at = db.Column(db.DateTime)          # First click timestamp
+    email_bounced_at = db.Column(db.DateTime)          # Bounce timestamp
+    email_bounce_reason = db.Column(db.Text)           # Bounce/error detail
 
     # Certificates relationship
     certificates = db.relationship('Certificate', backref='participant', lazy=True, cascade='all, delete-orphan')
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def email_status_display(self):
+        """Human-readable email status with icon hint."""
+        status_map = {
+            'pending':     ('Not Sent', 'muted', 'envelope'),
+            'sent':        ('Sent', 'blue', 'envelope-check'),
+            'delivered':   ('Delivered', 'info', 'check2-circle'),
+            'opened':      ('Opened', 'success', 'envelope-open'),
+            'clicked':     ('Clicked', 'success', 'box-arrow-up-right'),
+            'soft_bounce': ('Soft Bounce', 'warning', 'exclamation-triangle'),
+            'hard_bounce': ('Bounced', 'danger', 'x-circle'),
+            'spam':        ('Spam', 'danger', 'shield-exclamation'),
+            'error':       ('Error', 'danger', 'exclamation-circle'),
+        }
+        status = self.email_delivery_status or ('sent' if self.email_sent else 'pending')
+        label, color, icon = status_map.get(status, ('Unknown', 'muted', 'question-circle'))
+        return {'label': label, 'color': color, 'icon': icon, 'status': status}
 
     def __repr__(self):
         return f'<Participant {self.name}>'
@@ -2594,6 +2644,15 @@ def event_dashboard(event_id):
         participants_query = participants_query.filter(Participant.email_sent == True)
     elif email_filter == 'not-sent':
         participants_query = participants_query.filter(Participant.email_sent == False)
+    elif email_filter in ('delivered', 'opened', 'clicked', 'bounced'):
+        if email_filter == 'bounced':
+            participants_query = participants_query.filter(
+                Participant.email_delivery_status.in_(['soft_bounce', 'hard_bounce'])
+            )
+        else:
+            participants_query = participants_query.filter(
+                Participant.email_delivery_status == email_filter
+            )
 
     # Get paginated results
     pagination = participants_query.order_by(Participant.created_at.desc()).paginate(
@@ -2610,6 +2669,17 @@ def event_dashboard(event_id):
         Certificate.event_id == event_id
     ).scalar() or 0
 
+    # Brevo-specific tracking stats (cheap COUNT queries, only when Brevo is active)
+    brevo_stats = {}
+    if IS_BREVO_SMTP:
+        brevo_stats = {
+            'delivered': base_q.filter(Participant.email_delivery_status.in_(['delivered', 'opened', 'clicked'])).count(),
+            'opened': base_q.filter(Participant.email_delivery_status.in_(['opened', 'clicked'])).count(),
+            'clicked': base_q.filter(Participant.email_delivery_status == 'clicked').count(),
+            'bounced': base_q.filter(Participant.email_delivery_status.in_(['soft_bounce', 'hard_bounce'])).count(),
+            'spam': base_q.filter(Participant.email_delivery_status == 'spam').count(),
+        }
+
     stats = {
         'total': total_count,
         'checked_in': checked_in,
@@ -2622,7 +2692,8 @@ def event_dashboard(event_id):
         'per_page': per_page,
         'total_pages': pagination.pages,
         'has_next': pagination.has_next,
-        'has_prev': pagination.has_prev
+        'has_prev': pagination.has_prev,
+        **brevo_stats
     }
 
     return render_template(
@@ -2630,7 +2701,8 @@ def event_dashboard(event_id):
         event=event,
         participants=participants,
         stats=stats,
-        pagination=pagination
+        pagination=pagination,
+        is_brevo=IS_BREVO_SMTP
     )
 
 @app.route('/event/<int:event_id>/delete', methods=['POST'])
@@ -2957,6 +3029,226 @@ def api_qr_checkin(event_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# Brevo Email Tracking — Webhook & API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/webhook/brevo', methods=['POST'])
+@csrf.exempt  # Brevo sends raw POST, no CSRF token
+def brevo_webhook():
+    """Receive Brevo (Sendinblue) transactional email webhooks.
+
+    Brevo sends one JSON object per event with keys like:
+      event        — "delivered", "opened", "click", "soft_bounce",
+                     "hard_bounce", "spam", "invalid_email", "blocked", etc.
+      email        — recipient address
+      message-id   — SMTP message-id
+      X-Mailin-custom — the JSON tag we set when sending (contains participant_id)
+      ts_event     — unix timestamp of the event
+      reason       — bounce/block reason (if any)
+
+    Docs: https://developers.brevo.com/docs/transactional-webhooks
+    """
+    # Optional shared-secret validation
+    if BREVO_WEBHOOK_SECRET:
+        token = request.headers.get('X-Brevo-Secret', '')
+        if token != BREVO_WEBHOOK_SECRET:
+            return jsonify({'error': 'unauthorized'}), 401
+
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'error': 'empty payload'}), 400
+
+        # Handle both single event and array of events
+        events = data if isinstance(data, list) else [data]
+
+        processed = 0
+        for evt in events:
+            brevo_event = evt.get('event', '').lower()
+            recipient_email = evt.get('email', '').lower()
+            custom_tag = evt.get('X-Mailin-custom') or evt.get('tag', '')
+            message_id = evt.get('message-id', '') or evt.get('message_id', '')
+            ts = evt.get('ts_event') or evt.get('ts')
+            reason = evt.get('reason', '')
+
+            # Parse our custom tag to get participant_id
+            participant_id = None
+            if custom_tag:
+                try:
+                    tag_data = json.loads(custom_tag) if isinstance(custom_tag, str) else custom_tag
+                    participant_id = tag_data.get('participant_id')
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            # Look up participant — prefer ID, fall back to email
+            participant = None
+            if participant_id:
+                participant = Participant.query.get(participant_id)
+            if not participant and recipient_email:
+                # Fall back: most recently sent participant with this email
+                participant = Participant.query.filter(
+                    Participant.email.ilike(recipient_email),
+                    Participant.email_sent == True
+                ).order_by(Participant.email_sent_date.desc()).first()
+
+            if not participant:
+                continue  # can't match — skip
+
+            event_time = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else datetime.now(timezone.utc)
+
+            # Store message-id for future correlation
+            if message_id and not participant.email_message_id:
+                participant.email_message_id = message_id[:200]
+
+            # Update tracking — events follow a progression; only upgrade status
+            status_rank = {
+                'pending': 0, 'sent': 1, 'delivered': 2, 'opened': 3, 'clicked': 4,
+                'soft_bounce': 2, 'hard_bounce': 2, 'spam': 2, 'error': 2
+            }
+            current_rank = status_rank.get(participant.email_delivery_status or 'pending', 0)
+
+            if brevo_event == 'delivered' or brevo_event == 'request':
+                if current_rank < status_rank.get('delivered', 2):
+                    participant.email_delivery_status = 'delivered'
+                if not participant.email_delivered_at:
+                    participant.email_delivered_at = event_time
+
+            elif brevo_event in ('unique_opened', 'opened', 'proxy_open'):
+                participant.email_open_count = (participant.email_open_count or 0) + 1
+                if current_rank < status_rank.get('opened', 3):
+                    participant.email_delivery_status = 'opened'
+                if not participant.email_opened_at:
+                    participant.email_opened_at = event_time
+
+            elif brevo_event == 'click':
+                if current_rank < status_rank.get('clicked', 4):
+                    participant.email_delivery_status = 'clicked'
+                if not participant.email_clicked_at:
+                    participant.email_clicked_at = event_time
+
+            elif brevo_event == 'soft_bounce':
+                participant.email_delivery_status = 'soft_bounce'
+                participant.email_bounced_at = event_time
+                participant.email_bounce_reason = reason[:500] if reason else None
+
+            elif brevo_event in ('hard_bounce', 'invalid_email', 'blocked'):
+                participant.email_delivery_status = 'hard_bounce'
+                participant.email_bounced_at = event_time
+                participant.email_bounce_reason = reason[:500] if reason else None
+
+            elif brevo_event in ('spam', 'complaint'):
+                participant.email_delivery_status = 'spam'
+                participant.email_bounced_at = event_time
+                participant.email_bounce_reason = reason[:500] if reason else None
+
+            elif brevo_event == 'error':
+                if current_rank < 2:  # don't downgrade from delivered/opened
+                    participant.email_delivery_status = 'error'
+                    participant.email_bounce_reason = reason[:500] if reason else None
+
+            processed += 1
+
+        db.session.commit()
+        return jsonify({'success': True, 'processed': processed}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Brevo webhook error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/event/<int:event_id>/email_tracking')
+@require_admin
+def email_tracking_stats_api(event_id):
+    """Get aggregated email tracking stats for an event (Brevo-enhanced)."""
+    try:
+        base_q = Participant.query.filter_by(event_id=event_id)
+        total = base_q.count()
+        sent = base_q.filter(Participant.email_sent == True).count()
+        
+        # Brevo-specific detailed stats
+        delivered = base_q.filter(Participant.email_delivery_status.in_(['delivered', 'opened', 'clicked'])).count()
+        opened = base_q.filter(Participant.email_delivery_status.in_(['opened', 'clicked'])).count()
+        clicked = base_q.filter(Participant.email_delivery_status == 'clicked').count()
+        bounced = base_q.filter(Participant.email_delivery_status.in_(['soft_bounce', 'hard_bounce'])).count()
+        spam = base_q.filter(Participant.email_delivery_status == 'spam').count()
+
+        return jsonify({
+            'success': True,
+            'is_brevo': IS_BREVO_SMTP,
+            'total': total,
+            'sent': sent,
+            'delivered': delivered,
+            'opened': opened,
+            'clicked': clicked,
+            'bounced': bounced,
+            'spam': spam,
+            'open_rate': round((opened / sent * 100), 1) if sent > 0 else 0,
+            'delivery_rate': round((delivered / sent * 100), 1) if sent > 0 else 0,
+            'bounce_rate': round((bounced / sent * 100), 1) if sent > 0 else 0,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/admin/migrate/email-tracking')
+@require_superadmin
+def migrate_email_tracking():
+    """Add Brevo email tracking columns to participants table."""
+    columns_to_add = [
+        ('email_message_id',      'VARCHAR(200)'),
+        ('email_delivery_status', "VARCHAR(30) DEFAULT 'pending'"),
+        ('email_delivered_at',    'TIMESTAMP'),
+        ('email_opened_at',       'TIMESTAMP'),
+        ('email_open_count',      'INTEGER DEFAULT 0'),
+        ('email_clicked_at',      'TIMESTAMP'),
+        ('email_bounced_at',      'TIMESTAMP'),
+        ('email_bounce_reason',   'TEXT'),
+    ]
+    added = []
+    skipped = []
+    try:
+        with db.engine.connect() as conn:
+            for col_name, col_type in columns_to_add:
+                try:
+                    # Check if column exists (works for both Postgres and SQLite)
+                    result = conn.execute(db.text(
+                        "SELECT * FROM participants LIMIT 0"
+                    ))
+                    existing_cols = [c.lower() for c in result.keys()]
+                    if col_name.lower() in existing_cols:
+                        skipped.append(col_name)
+                        continue
+                    conn.execute(db.text(
+                        f'ALTER TABLE participants ADD COLUMN {col_name} {col_type}'
+                    ))
+                    added.append(col_name)
+                except Exception as col_err:
+                    if 'duplicate column' in str(col_err).lower() or 'already exists' in str(col_err).lower():
+                        skipped.append(col_name)
+                    else:
+                        raise col_err
+            conn.commit()
+
+        # Also backfill email_delivery_status for already-sent emails
+        Participant.query.filter(
+            Participant.email_sent == True,
+            (Participant.email_delivery_status == None) | (Participant.email_delivery_status == 'pending')
+        ).update({Participant.email_delivery_status: 'sent'}, synchronize_session=False)
+        db.session.commit()
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Migration complete. Added: {added}, Skipped (already exist): {skipped}',
+            'added': added,
+            'skipped': skipped,
+            'is_brevo': IS_BREVO_SMTP
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/event/<int:event_id>/stats')

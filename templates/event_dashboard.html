@@ -424,6 +424,23 @@
         <div class="stat-value">{{ stats.emails_sent }}</div>
         <div class="stat-label">Emails Sent</div>
     </div>
+    {% if is_brevo %}
+    <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(16,185,129,0.12);color:#10b981;"><i class="bi bi-check2-circle"></i></div>
+        <div class="stat-value">{{ stats.delivered|default(0) }}</div>
+        <div class="stat-label">Delivered</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(99,102,241,0.12);color:#6366f1;"><i class="bi bi-envelope-open-fill"></i></div>
+        <div class="stat-value">{{ stats.opened|default(0) }}</div>
+        <div class="stat-label">Opened</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(239,68,68,0.12);color:#ef4444;"><i class="bi bi-exclamation-triangle-fill"></i></div>
+        <div class="stat-value">{{ stats.bounced|default(0) }}</div>
+        <div class="stat-label">Bounced</div>
+    </div>
+    {% endif %}
     <div class="stat-card">
         <div class="stat-icon stat-icon-rose"><i class="bi bi-award-fill"></i></div>
         <div class="stat-value">{{ stats.certificates_issued }}</div>
@@ -536,6 +553,12 @@
                     <option value="">All Emails</option>
                     <option value="sent" {{ 'selected' if request.args.get('email_status') == 'sent' }}>Sent</option>
                     <option value="not-sent" {{ 'selected' if request.args.get('email_status') == 'not-sent' }}>Not Sent</option>
+                    {% if is_brevo %}
+                    <option value="delivered" {{ 'selected' if request.args.get('email_status') == 'delivered' }}>Delivered</option>
+                    <option value="opened" {{ 'selected' if request.args.get('email_status') == 'opened' }}>Opened</option>
+                    <option value="clicked" {{ 'selected' if request.args.get('email_status') == 'clicked' }}>Clicked</option>
+                    <option value="bounced" {{ 'selected' if request.args.get('email_status') == 'bounced' }}>Bounced</option>
+                    {% endif %}
                 </select>
             </div>
             <div class="col-md-1">
@@ -568,7 +591,7 @@
                         data-email="{{ participant.email|lower }}"
                         data-ticket="{{ participant.ticket_number|lower }}"
                         data-checkin="{{ 'checked-in' if participant.checked_in else 'pending' }}"
-                        data-email-sent="{{ 'sent' if participant.email_sent else 'not-sent' }}">
+                        data-email-sent="{{ participant.email_delivery_status if (is_brevo and participant.email_sent) else ('sent' if participant.email_sent else 'not-sent') }}">
                         <td><input type="checkbox" name="selected_participants" value="{{ participant.id }}" class="form-check-input participant-checkbox"></td>
                         <td>
                             <div class="p-info">
@@ -585,7 +608,12 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            {% if participant.email_sent %}
+                            {% if is_brevo and participant.email_sent %}
+                                {% set es = participant.email_status_display %}
+                                <span class="pill pill-{{ es.color }}" title="{% if participant.email_delivered_at %}Delivered: {{ participant.email_delivered_at.strftime('%d %b %H:%M') }}{% endif %}{% if participant.email_opened_at %} | Opened: {{ participant.email_opened_at.strftime('%d %b %H:%M') }} ({{ participant.email_open_count }}x){% endif %}{% if participant.email_clicked_at %} | Clicked: {{ participant.email_clicked_at.strftime('%d %b %H:%M') }}{% endif %}">
+                                    <i class="bi bi-{{ es.icon }}"></i> {{ es.label }}
+                                </span>
+                            {% elif participant.email_sent %}
                                 <span class="pill pill-blue"><i class="bi bi-envelope-check"></i> Sent</span>
                             {% else %}
                                 <span class="pill pill-muted"><i class="bi bi-envelope"></i> Not Sent</span>
