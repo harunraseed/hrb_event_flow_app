@@ -462,13 +462,13 @@
     <div class="toolbar-section">
         <div class="toolbar-title">
             <i class="bi bi-people-fill" style="color:var(--primary);"></i>
-            Participants <span class="count-chip" id="participantCount">{{ participants|length }}</span>
+            Participants <span class="count-chip" id="participantCount">{{ stats.filtered_total }}{% if stats.filtered_total != stats.total %} / {{ stats.total }}{% endif %}</span>
         </div>
         <div class="bulk-bar">
             <button type="button" class="btn btn-outline-primary" onclick="toggleSelectAll()">
                 <i class="bi bi-check2-square me-1"></i>Select All
             </button>
-            <button type="submit" formaction="{{ url_for('send_emails', event_id=event.id) }}" class="btn btn-warning text-white">
+            <button type="button" class="btn btn-warning text-white" onclick="startBatchEmails()">
                 <i class="bi bi-envelope me-1"></i>Send Email
             </button>
             <button type="submit" formaction="{{ url_for('send_reminder', event_id=event.id) }}" class="btn btn-primary"
@@ -487,7 +487,7 @@
         </div>
     </div>
 
-    <!-- Filter -->
+    <!-- Filter (Server-side search) -->
     <div class="filter-bar">
         <div class="row g-2 align-items-center">
             <div class="col-md-5">
@@ -495,21 +495,22 @@
                     <span class="input-group-text bg-white" style="border-radius:var(--r-lg) 0 0 var(--r-lg);"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" class="form-control border-start-0" id="searchInput"
                            placeholder="Search name, email, ticket..."
-                           onkeyup="searchParticipants()" style="border-radius:0 var(--r-lg) var(--r-lg) 0;">
+                           value="{{ request.args.get('q', '') }}"
+                           style="border-radius:0 var(--r-lg) var(--r-lg) 0;">
                 </div>
             </div>
             <div class="col-md-3">
-                <select class="form-select" id="checkinFilter" onchange="searchParticipants()">
+                <select class="form-select" id="checkinFilter">
                     <option value="">All Check-in</option>
-                    <option value="checked-in">Checked In</option>
-                    <option value="pending">Pending</option>
+                    <option value="checked-in" {{ 'selected' if request.args.get('checkin') == 'checked-in' }}>Checked In</option>
+                    <option value="pending" {{ 'selected' if request.args.get('checkin') == 'pending' }}>Pending</option>
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="form-select" id="emailFilter" onchange="searchParticipants()">
+                <select class="form-select" id="emailFilter">
                     <option value="">All Emails</option>
-                    <option value="sent">Sent</option>
-                    <option value="not-sent">Not Sent</option>
+                    <option value="sent" {{ 'selected' if request.args.get('email_status') == 'sent' }}>Sent</option>
+                    <option value="not-sent" {{ 'selected' if request.args.get('email_status') == 'not-sent' }}>Not Sent</option>
                 </select>
             </div>
             <div class="col-md-1">
@@ -623,26 +624,31 @@
             <nav aria-label="Page navigation">
                 <ul class="pagination mb-0">
                     {% if pagination.has_prev %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.prev_num) }}"><i class="bi bi-chevron-left"></i></a></li>
+                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.prev_num, q=request.args.get('q',''), checkin=request.args.get('checkin',''), email_status=request.args.get('email_status','')) }}"><i class="bi bi-chevron-left"></i></a></li>
                     {% else %}
                     <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
                     {% endif %}
-                    {% for page_num in range(1, stats.total_pages + 1) %}
-                        {% if page_num == pagination.page %}
-                        <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                    {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if page_num %}
+                            {% if page_num == pagination.page %}
+                            <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                            {% else %}
+                            <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=page_num, q=request.args.get('q',''), checkin=request.args.get('checkin',''), email_status=request.args.get('email_status','')) }}">{{ page_num }}</a></li>
+                            {% endif %}
                         {% else %}
-                        <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=page_num) }}">{{ page_num }}</a></li>
+                            <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
                         {% endif %}
                     {% endfor %}
                     {% if pagination.has_next %}
-                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.next_num) }}"><i class="bi bi-chevron-right"></i></a></li>
+                    <li class="page-item"><a class="page-link" href="{{ url_for('event_dashboard', event_id=event.id, page=pagination.next_num, q=request.args.get('q',''), checkin=request.args.get('checkin',''), email_status=request.args.get('email_status','')) }}"><i class="bi bi-chevron-right"></i></a></li>
                     {% else %}
                     <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
                     {% endif %}
                 </ul>
             </nav>
             <small class="text-muted">
-                Showing {{ (stats.page - 1) * stats.per_page + 1 }} to {{ [stats.page * stats.per_page, stats.total] | min }} of {{ stats.total }} participants
+                Showing {{ (stats.page - 1) * stats.per_page + 1 }} to {{ [stats.page * stats.per_page, stats.filtered_total] | min }} of {{ stats.filtered_total }} participants
+                {% if stats.filtered_total != stats.total %} (filtered from {{ stats.total }} total){% endif %}
             </small>
         </div>
         {% endif %}
@@ -753,31 +759,129 @@
 
     boxes().forEach(function(cb) { cb.addEventListener('change', updateSelectAll); });
 
-    /* Search */
-    window.searchParticipants = function() {
-        var q = document.getElementById('searchInput').value.toLowerCase();
-        var cf = document.getElementById('checkinFilter').value;
-        var ef = document.getElementById('emailFilter').value;
-        var rows = document.querySelectorAll('#participantsTable tbody tr');
-        var visible = 0;
-        rows.forEach(function(row) {
-            var mt = !q || [row.dataset.name, row.dataset.email, row.dataset.ticket].some(function(v) { return v && v.indexOf(q) !== -1; });
-            var mc = !cf || row.dataset.checkin === cf;
-            var me = !ef || row.dataset.emailSent === ef;
-            var show = mt && mc && me;
-            row.style.display = show ? '' : 'none';
-            if (show) visible++;
-        });
-        var el = document.getElementById('participantCount');
-        var total = {{ participants|length }};
-        el.textContent = visible !== total ? visible + ' / ' + total : total;
-    };
+    /* Search — server-side */
+    var searchTimer = null;
+    var searchInput = document.getElementById('searchInput');
+    var checkinFilter = document.getElementById('checkinFilter');
+    var emailFilter = document.getElementById('emailFilter');
+
+    function doServerSearch() {
+        var q = searchInput.value.trim();
+        var cf = checkinFilter.value;
+        var ef = emailFilter.value;
+        var params = new URLSearchParams();
+        if (q) params.set('q', q);
+        if (cf) params.set('checkin', cf);
+        if (ef) params.set('email_status', ef);
+        var base = "{{ url_for('event_dashboard', event_id=event.id) }}";
+        var qs = params.toString();
+        window.location.href = base + (qs ? '?' + qs : '');
+    }
+
+    // Debounced search on typing (500ms delay)
+    searchInput.addEventListener('keyup', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(searchTimer);
+            doServerSearch();
+            return;
+        }
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(doServerSearch, 500);
+    });
+
+    // Prevent form submit on Enter in search
+    searchInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') e.preventDefault();
+    });
+
+    checkinFilter.addEventListener('change', doServerSearch);
+    emailFilter.addEventListener('change', doServerSearch);
 
     window.clearSearch = function() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('checkinFilter').value = '';
-        document.getElementById('emailFilter').value = '';
-        searchParticipants();
+        window.location.href = "{{ url_for('event_dashboard', event_id=event.id) }}";
+    };
+
+    /* ── Batch Email Sending with Progress ── */
+    window.startBatchEmails = function() {
+        var selected = document.querySelectorAll('.participant-checkbox:checked');
+        var selectedIds = [];
+        selected.forEach(function(cb) { selectedIds.push(cb.value); });
+        
+        var targetCount = selectedIds.length || {{ stats.total }};
+        var label = selectedIds.length ? selectedIds.length + ' selected' : 'all unsent';
+        
+        if (!confirm('Send emails to ' + label + ' participant(s)?\n\nEmails will be sent in small batches to avoid timeouts.')) return;
+        
+        // Show progress modal
+        var modal = document.getElementById('emailProgressModal');
+        var progressBar = document.getElementById('emailProgressBar');
+        var progressText = document.getElementById('emailProgressText');
+        var progressDetail = document.getElementById('emailProgressDetail');
+        var closeBtn = document.getElementById('emailProgressClose');
+        modal.style.display = 'flex';
+        closeBtn.style.display = 'none';
+        progressBar.style.width = '0%';
+        progressText.textContent = 'Starting...';
+        progressDetail.textContent = '';
+        
+        var totalSent = 0;
+        var totalErrors = 0;
+        
+        function sendNextBatch() {
+            fetch("{{ url_for('send_emails_batch_api', event_id=event.id) }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                body: JSON.stringify({ 
+                    participant_ids: selectedIds.length ? selectedIds : [],
+                    batch_size: 5
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) {
+                    progressText.textContent = 'Error: ' + (data.message || 'Unknown error');
+                    progressBar.style.background = '#ef4444';
+                    closeBtn.style.display = 'inline-block';
+                    return;
+                }
+                
+                totalSent = data.total_sent;
+                totalErrors += (data.errors_this_batch || 0);
+                var pct = data.total > 0 ? Math.round((totalSent / data.total) * 100) : 100;
+                progressBar.style.width = pct + '%';
+                progressText.textContent = totalSent + ' / ' + data.total + ' emails sent';
+                
+                if (totalErrors > 0) {
+                    progressDetail.textContent = totalErrors + ' error(s) encountered';
+                }
+                
+                if (data.done) {
+                    progressBar.style.width = '100%';
+                    progressBar.style.background = '#16a34a';
+                    progressText.textContent = 'Done! ' + totalSent + ' / ' + data.total + ' emails sent.';
+                    if (totalErrors > 0) {
+                        progressDetail.textContent = totalErrors + ' failed. Check email configuration.';
+                    }
+                    closeBtn.style.display = 'inline-block';
+                } else {
+                    // Continue with next batch
+                    setTimeout(sendNextBatch, 300);
+                }
+            })
+            .catch(function(err) {
+                progressText.textContent = 'Network error: ' + err.message;
+                progressBar.style.background = '#ef4444';
+                closeBtn.style.display = 'inline-block';
+            });
+        }
+        
+        sendNextBatch();
+    };
+    
+    window.closeEmailProgress = function() {
+        document.getElementById('emailProgressModal').style.display = 'none';
+        location.reload();
     };
 
     /* Toast */
@@ -794,4 +898,20 @@
     }
 })();
 </script>
+
+<!-- Email Progress Modal -->
+<div id="emailProgressModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;">
+    <div style="background:white;border-radius:1rem;padding:2rem;max-width:480px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+        <i class="bi bi-envelope-paper" style="font-size:2.5rem;color:var(--primary);"></i>
+        <h5 class="fw-bold mt-2 mb-3">Sending Emails</h5>
+        <div style="background:#e5e7eb;border-radius:999px;height:12px;overflow:hidden;margin-bottom:1rem;">
+            <div id="emailProgressBar" style="height:100%;width:0%;background:var(--primary);border-radius:999px;transition:width 0.3s ease;"></div>
+        </div>
+        <p id="emailProgressText" class="mb-1 fw-semibold" style="font-size:0.9rem;">Starting...</p>
+        <p id="emailProgressDetail" class="text-muted mb-3" style="font-size:0.8rem;"></p>
+        <button id="emailProgressClose" class="btn btn-primary" style="display:none;" onclick="closeEmailProgress()">
+            <i class="bi bi-check-lg me-1"></i>Done
+        </button>
+    </div>
+</div>
 {% endblock %}

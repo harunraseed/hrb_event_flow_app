@@ -769,39 +769,56 @@ class Event(db.Model):
     def __repr__(self):
         return f'<Event {self.name}>'
     
-    def generate_ticket_number(self):
-        """Generate unique ticket number in format: ALIAS-EVENTDATE-001"""
-        # Use alias_name if available, otherwise use first 3 letters of event name
+    def _ticket_prefix_and_date(self):
+        """Return (prefix, date_str) for ticket number generation."""
         if self.alias_name:
             prefix = self.alias_name.upper()
         else:
             prefix = self.name.replace(' ', '')[:3].upper()
-        
-        # Format date as DDMMYYYY 
         date_str = self.date.strftime('%d%m%Y')
-        
-        # Find the next available number by checking existing ticket numbers
+        return prefix, date_str
+
+    def generate_ticket_number(self):
+        """Generate unique ticket number in format: ALIAS-EVENTDATE-001"""
+        prefix, date_str = self._ticket_prefix_and_date()
         base_pattern = f"{prefix}-{date_str}-"
-        
-        # Get all existing ticket numbers for this event with the same pattern
-        existing_participants = Participant.query.filter_by(event_id=self.id).all()
-        existing_numbers = []
-        
-        for participant in existing_participants:
-            if participant.ticket_number and participant.ticket_number.startswith(base_pattern):
-                try:
-                    # Extract the number part (last 3 digits)
-                    number_part = participant.ticket_number.split('-')[-1]
-                    existing_numbers.append(int(number_part))
-                except (ValueError, IndexError):
-                    continue
-        
-        # Find the next available number
-        next_number = 1
-        while next_number in existing_numbers:
-            next_number += 1
-        
+
+        # Single efficient query: get the max ticket number suffix using SQL
+        max_result = db.session.query(
+            db.func.max(
+                db.cast(
+                    db.func.substr(Participant.ticket_number, len(base_pattern) + 1),
+                    db.Integer
+                )
+            )
+        ).filter(
+            Participant.event_id == self.id,
+            Participant.ticket_number.like(f"{base_pattern}%")
+        ).scalar()
+
+        next_number = (max_result or 0) + 1
         return f"{prefix}-{date_str}-{next_number:03d}"
+
+    def generate_ticket_numbers_batch(self, count):
+        """Generate multiple unique ticket numbers efficiently in one go."""
+        prefix, date_str = self._ticket_prefix_and_date()
+        base_pattern = f"{prefix}-{date_str}-"
+
+        # Single query to get current max
+        max_result = db.session.query(
+            db.func.max(
+                db.cast(
+                    db.func.substr(Participant.ticket_number, len(base_pattern) + 1),
+                    db.Integer
+                )
+            )
+        ).filter(
+            Participant.event_id == self.id,
+            Participant.ticket_number.like(f"{base_pattern}%")
+        ).scalar()
+
+        start = (max_result or 0) + 1
+        return [f"{prefix}-{date_str}-{i:03d}" for i in range(start, start + count)]
 
 class Participant(db.Model):
     __tablename__ = 'participants'
@@ -2470,35 +2487,40 @@ def upload_participants(event_id):
             stream = io.TextIOWrapper(file.stream, encoding='utf-8-sig')  # utf-8-sig removes BOM
             csv_data = csv.DictReader(stream)
             
-            # Debug: Print CSV headers
-            print(f"CSV Headers: {csv_data.fieldnames}")
-            
-            added_count = 0
+            # Read all valid rows first (fast, no DB involved)
+            rows_to_add = []
             for row in csv_data:
-                # Try different common column name variations (case-insensitive)
                 name = (row.get('name') or row.get('Name') or row.get('NAME') or 
                        row.get('participant_name') or row.get('Participant Name') or '').strip()
                 email = (row.get('email') or row.get('Email') or row.get('EMAIL') or 
                         row.get('participant_email') or row.get('Participant Email') or '').strip()
                 
                 if not name or not email:
-                    print(f"Skipping row with missing data: name={name}, email={email}")
                     continue
-                
-                ticket_number = event.generate_ticket_number()
-                participant = Participant(
+                rows_to_add.append((name, email))
+            
+            if not rows_to_add:
+                flash('No valid participants found in CSV. Check column names (name, email).', 'warning')
+                return redirect(url_for('upload_participants', event_id=event_id))
+            
+            # Generate all ticket numbers in one DB query
+            ticket_numbers = event.generate_ticket_numbers_batch(len(rows_to_add))
+            
+            # Batch insert using bulk_save_objects for speed
+            participants_to_add = []
+            for (name, email), ticket_number in zip(rows_to_add, ticket_numbers):
+                participants_to_add.append(Participant(
                     event_id=event_id,
                     name=name,
                     email=email,
                     ticket_number=ticket_number
-                )
-                db.session.add(participant)
-                added_count += 1
-                print(f"Added participant: {name} ({email}) - Ticket: {ticket_number}")
+                ))
             
+            # Use bulk insert — much faster than individual add()
+            db.session.bulk_save_objects(participants_to_add)
             db.session.commit()
-            print(f"Successfully committed {added_count} participants to database")
-            flash(f'Successfully uploaded {added_count} participants!', 'success')
+            
+            flash(f'Successfully uploaded {len(participants_to_add)} participants!', 'success')
             return redirect(url_for('event_dashboard', event_id=event_id))
         except Exception as e:
             db.session.rollback()
@@ -2512,12 +2534,40 @@ def upload_participants(event_id):
 def event_dashboard(event_id):
     event = Event.query.get_or_404(event_id)
 
-    # Get pagination parameters
+    # Get pagination and filter parameters
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+    search_query = request.args.get('q', '', type=str).strip()
+    checkin_filter = request.args.get('checkin', '', type=str)
+    email_filter = request.args.get('email_status', '', type=str)
 
-    # Query participants with pagination - load certificates eagerly to avoid N+1 queries
-    participants_query = Participant.query.options(db.joinedload(Participant.certificates)).filter_by(event_id=event_id)
+    # Base query with eager loading to avoid N+1
+    participants_query = Participant.query.options(
+        db.joinedload(Participant.certificates)
+    ).filter_by(event_id=event_id)
+
+    # Apply server-side search (name, email, or ticket number)
+    if search_query:
+        search_like = f"%{search_query}%"
+        participants_query = participants_query.filter(
+            db.or_(
+                Participant.name.ilike(search_like),
+                Participant.email.ilike(search_like),
+                Participant.ticket_number.ilike(search_like)
+            )
+        )
+
+    # Apply check-in filter
+    if checkin_filter == 'checked-in':
+        participants_query = participants_query.filter(Participant.checked_in == True)
+    elif checkin_filter == 'pending':
+        participants_query = participants_query.filter(Participant.checked_in == False)
+
+    # Apply email filter
+    if email_filter == 'sent':
+        participants_query = participants_query.filter(Participant.email_sent == True)
+    elif email_filter == 'not-sent':
+        participants_query = participants_query.filter(Participant.email_sent == False)
 
     # Get paginated results
     pagination = participants_query.order_by(Participant.created_at.desc()).paginate(
@@ -2525,14 +2575,14 @@ def event_dashboard(event_id):
     )
     participants = pagination.items
 
-    # Get total count for stats (single query instead of counting paginated items)
-    total_count = participants_query.count()
-
-    # Calculate stats from loaded data (avoid additional DB queries)
-    emails_sent = sum(1 for p in participants if p.email_sent)
-    checked_in = sum(1 for p in participants if p.checked_in)
-    # Calculate certificate issued count from loaded participants (no extra query)
-    certificates_issued = sum(1 for p in participants if p.certificates)
+    # Use efficient DB aggregate queries for global stats (across ALL participants, not just current page)
+    base_q = Participant.query.filter_by(event_id=event_id)
+    total_count = base_q.count()
+    checked_in = base_q.filter(Participant.checked_in == True).count()
+    emails_sent = base_q.filter(Participant.email_sent == True).count()
+    certificates_issued = db.session.query(db.func.count(db.distinct(Certificate.participant_id))).filter(
+        Certificate.event_id == event_id
+    ).scalar() or 0
 
     stats = {
         'total': total_count,
@@ -2540,6 +2590,7 @@ def event_dashboard(event_id):
         'pending': total_count - checked_in,
         'emails_sent': emails_sent,
         'certificates_issued': certificates_issued,
+        'filtered_total': pagination.total,  # total matching current filter
         'page': page,
         'per_page': per_page,
         'total_pages': pagination.pages,
@@ -2563,36 +2614,36 @@ def delete_event(event_id):
         event = Event.query.get_or_404(event_id)
         event_name = event.name  # Store name before deletion
         
-        # Get all participants for this event
-        participants = Participant.query.filter_by(event_id=event_id).all()
+        # Get all participant IDs for this event (just IDs, not full objects)
+        participant_ids = [p.id for p in Participant.query.filter_by(event_id=event_id).with_entities(Participant.id).all()]
         
-        # Delete associated data in correct order (due to foreign key constraints)
+        # Delete associated data using bulk queries (correct order for FK constraints)
         
-        # 1. Delete quiz answers first
-        for participant in participants:
-            quiz_attempts = QuizAttempt.query.filter_by(participant_id=participant.id).all()
-            for attempt in quiz_attempts:
-                QuizAnswer.query.filter_by(attempt_id=attempt.id).delete()
-                db.session.delete(attempt)
+        if participant_ids:
+            # 1. Delete quiz answers via attempts
+            attempt_ids = [a.id for a in QuizAttempt.query.filter(
+                QuizAttempt.participant_id.in_(participant_ids)
+            ).with_entities(QuizAttempt.id).all()]
+            if attempt_ids:
+                QuizAnswer.query.filter(QuizAnswer.attempt_id.in_(attempt_ids)).delete(synchronize_session=False)
+                QuizAttempt.query.filter(QuizAttempt.id.in_(attempt_ids)).delete(synchronize_session=False)
         
         # 2. Delete quiz questions and quizzes
-        quizzes = Quiz.query.filter_by(event_id=event_id).all()
-        for quiz in quizzes:
-            QuizQuestion.query.filter_by(quiz_id=quiz.id).delete()
-            db.session.delete(quiz)
+        quiz_ids = [q.id for q in Quiz.query.filter_by(event_id=event_id).with_entities(Quiz.id).all()]
+        if quiz_ids:
+            QuizQuestion.query.filter(QuizQuestion.quiz_id.in_(quiz_ids)).delete(synchronize_session=False)
+            Quiz.query.filter(Quiz.id.in_(quiz_ids)).delete(synchronize_session=False)
         
-        # 3. Delete certificates
-        for participant in participants:
-            Certificate.query.filter_by(participant_id=participant.id).delete()
+        if participant_ids:
+            # 3. Delete certificates
+            Certificate.query.filter(Certificate.participant_id.in_(participant_ids)).delete(synchronize_session=False)
         
-        # 4. Delete certificate config for this event
-        certificate_config = CertificateConfig.query.filter_by(event_id=event_id).first()
-        if certificate_config:
-            db.session.delete(certificate_config)
+        # 4. Delete certificate config
+        CertificateConfig.query.filter_by(event_id=event_id).delete(synchronize_session=False)
         
-        # 5. Delete participants
-        for participant in participants:
-            db.session.delete(participant)
+        if participant_ids:
+            # 5. Delete participants
+            Participant.query.filter(Participant.id.in_(participant_ids)).delete(synchronize_session=False)
         
         # 6. Finally delete the event
         db.session.delete(event)
@@ -2617,21 +2668,15 @@ def bulk_delete_participants_alt():
         return redirect(request.referrer or url_for('index'))
     
     try:
+        ids_int = [int(pid) for pid in participant_ids if str(pid).isdigit()]
+        
         # Get event_id before deletion
-        first_participant = Participant.query.get(participant_ids[0])
+        first_participant = Participant.query.get(ids_int[0]) if ids_int else None
         event_id = first_participant.event_id if first_participant else None
         
-        deleted_count = 0
-        for pid in participant_ids:
-            participant = Participant.query.get(pid)
-            if participant:
-                # Delete associated certificates first
-                certificates = Certificate.query.filter_by(participant_id=pid).all()
-                for cert in certificates:
-                    db.session.delete(cert)
-                
-                db.session.delete(participant)
-                deleted_count += 1
+        # Bulk delete certificates then participants (2 queries instead of N)
+        Certificate.query.filter(Certificate.participant_id.in_(ids_int)).delete(synchronize_session=False)
+        deleted_count = Participant.query.filter(Participant.id.in_(ids_int)).delete(synchronize_session=False)
         
         db.session.commit()
         flash(f'{deleted_count} participants deleted successfully!', 'success')
@@ -2905,8 +2950,9 @@ def event_stats_api(event_id):
     """API endpoint for real-time event check-in stats"""
     try:
         event = Event.query.get_or_404(event_id)
-        total = len(event.participants)
-        checked_in = sum(1 for p in event.participants if p.checked_in)
+        base_q = Participant.query.filter_by(event_id=event_id)
+        total = base_q.count()
+        checked_in = base_q.filter(Participant.checked_in == True).count()
         pending = total - checked_in
         
         return jsonify({
@@ -2914,6 +2960,71 @@ def event_stats_api(event_id):
             'total': total,
             'checked_in': checked_in,
             'pending': pending
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/event/<int:event_id>/send_emails_batch', methods=['POST'])
+@require_admin
+def send_emails_batch_api(event_id):
+    """Send emails in small batches to avoid Vercel timeout. Called repeatedly from frontend."""
+    try:
+        event = Event.query.get_or_404(event_id)
+        data = request.get_json() or {}
+        
+        # Get participant IDs to send to (or all unsent)
+        participant_ids = data.get('participant_ids', [])
+        batch_size = min(data.get('batch_size', 5), 10)  # Max 10 per batch for safety
+        
+        if not app.config.get('MAIL_USERNAME'):
+            return jsonify({'success': False, 'message': 'Email not configured'}), 400
+        
+        if participant_ids:
+            participants = Participant.query.filter(
+                Participant.id.in_([int(pid) for pid in participant_ids]),
+                Participant.event_id == event_id,
+                Participant.email_sent == False
+            ).limit(batch_size).all()
+        else:
+            # Send to all unsent participants
+            participants = Participant.query.filter_by(
+                event_id=event_id, email_sent=False
+            ).limit(batch_size).all()
+        
+        if not participants:
+            # Count how many were already sent
+            total_sent = Participant.query.filter_by(event_id=event_id, email_sent=True).count()
+            total = Participant.query.filter_by(event_id=event_id).count()
+            return jsonify({
+                'success': True, 'done': True,
+                'sent_this_batch': 0, 'total_sent': total_sent, 'total': total,
+                'message': f'All emails sent! ({total_sent}/{total})'
+            })
+        
+        sent_count = 0
+        errors = []
+        for participant in participants:
+            try:
+                send_ticket_email(participant, event)
+                sent_count += 1
+            except Exception as e:
+                errors.append(f"{participant.email}: {str(e)}")
+        
+        # Get updated counts
+        total_sent = Participant.query.filter_by(event_id=event_id, email_sent=True).count()
+        total = Participant.query.filter_by(event_id=event_id).count()
+        remaining = total - total_sent
+        
+        return jsonify({
+            'success': True,
+            'done': remaining == 0,
+            'sent_this_batch': sent_count,
+            'errors_this_batch': len(errors),
+            'total_sent': total_sent,
+            'total': total,
+            'remaining': remaining,
+            'errors': errors[:5]  # Only return first 5 errors
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -3420,35 +3531,29 @@ def bulk_delete_participants():
         flash('No participants selected for deletion.', 'warning')
         return redirect(request.referrer or url_for('index'))
     
-    deleted_count = 0
-    deleted_names = []
-    
     try:
-        for participant_id in selected_participants:
-            participant = Participant.query.get(participant_id)
-            if participant:
-                deleted_names.append(participant.name)
-                
-                # Delete associated certificates first
-                certificates = Certificate.query.filter_by(participant_id=participant_id).all()
-                for cert in certificates:
-                    db.session.delete(cert)
-                
-                # Delete participant
-                db.session.delete(participant)
-                deleted_count += 1
+        selected_ids_int = [int(pid) for pid in selected_participants if pid.isdigit()]
+        
+        # Get names for flash message (single query)
+        names = [p.name for p in Participant.query.filter(
+            Participant.id.in_(selected_ids_int)
+        ).with_entities(Participant.name).all()]
+        
+        # Bulk delete certificates first (single query), then participants
+        Certificate.query.filter(Certificate.participant_id.in_(selected_ids_int)).delete(synchronize_session=False)
+        deleted_count = Participant.query.filter(Participant.id.in_(selected_ids_int)).delete(synchronize_session=False)
         
         db.session.commit()
         
         if deleted_count > 0:
-            flash(f'Successfully deleted {deleted_count} participants: {", ".join(deleted_names[:5])}{"..." if len(deleted_names) > 5 else ""}', 'success')
+            flash(f'Successfully deleted {deleted_count} participants: {", ".join(names[:5])}{"..." if len(names) > 5 else ""}', 'success')
         else:
             flash('No participants were deleted.', 'warning')
         
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting participants: {str(e)}', 'error')
-        print(f"? Error in bulk delete: {str(e)}")
+        print(f"Error in bulk delete: {str(e)}")
     
     return redirect(request.referrer or url_for('index'))
 
