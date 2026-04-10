@@ -468,9 +468,34 @@
             <button type="button" class="btn btn-outline-primary" onclick="toggleSelectAll()">
                 <i class="bi bi-check2-square me-1"></i>Select All
             </button>
-            <button type="button" class="btn btn-warning text-white" onclick="startBatchEmails()">
-                <i class="bi bi-envelope me-1"></i>Send Email
-            </button>
+
+            <!-- Email dropdown with options -->
+            <div class="dropdown">
+                <button class="btn btn-warning text-white dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-envelope me-1"></i>Send Email
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <button class="dropdown-item" type="button" onclick="startBatchEmails('unsent')">
+                            <i class="bi bi-envelope-plus me-2 text-warning"></i>Send to Unsent Only
+                            <span class="badge bg-warning text-dark ms-2">{{ stats.emails_unsent }}</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button class="dropdown-item" type="button" onclick="startBatchEmails('selected')">
+                            <i class="bi bi-check2-square me-2 text-primary"></i>Send to Selected
+                            <span class="badge bg-primary ms-2" id="selectedCountBadge">0</span>
+                        </button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button class="dropdown-item text-danger" type="button" onclick="startBatchEmails('all')">
+                            <i class="bi bi-envelope-fill me-2"></i>Resend to ALL
+                            <span class="badge bg-danger ms-2">{{ stats.total }}</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
             <button type="submit" formaction="{{ url_for('send_reminder', event_id=event.id) }}" class="btn btn-primary"
                     onclick="return confirm('Send reminder email to ' + (document.querySelectorAll('.participant-checkbox:checked').length || 'ALL') + ' participant(s)?');">
                 <i class="bi bi-bell me-1"></i>Send Reminder
@@ -755,6 +780,9 @@
         var all = boxes().length, ch = checked().length;
         selectAll.checked = ch === all && all > 0;
         selectAll.indeterminate = ch > 0 && ch < all;
+        // Update selected count badge
+        var badge = document.getElementById('selectedCountBadge');
+        if (badge) badge.textContent = ch;
     }
 
     boxes().forEach(function(cb) { cb.addEventListener('change', updateSelectAll); });
@@ -803,82 +831,163 @@
     };
 
     /* ── Batch Email Sending with Progress ── */
-    window.startBatchEmails = function() {
+    window.startBatchEmails = function(mode) {
         var selected = document.querySelectorAll('.participant-checkbox:checked');
         var selectedIds = [];
         selected.forEach(function(cb) { selectedIds.push(cb.value); });
-        
-        var targetCount = selectedIds.length || {{ stats.total }};
-        var label = selectedIds.length ? selectedIds.length + ' selected' : 'all unsent';
-        
-        if (!confirm('Send emails to ' + label + ' participant(s)?\n\nEmails will be sent in small batches to avoid timeouts.')) return;
-        
+
+        var unsent = {{ stats.emails_unsent }};
+        var total = {{ stats.total }};
+        var label, targetCount;
+
+        if (mode === 'selected') {
+            if (selectedIds.length === 0) {
+                toast('Please select participants first using the checkboxes.', 'danger');
+                return;
+            }
+            label = selectedIds.length + ' selected participant(s)';
+            targetCount = selectedIds.length;
+        } else if (mode === 'all') {
+            label = 'ALL ' + total + ' participants (including already sent)';
+            targetCount = total;
+        } else {
+            // unsent (default)
+            if (unsent === 0) {
+                toast('All emails have already been sent!', 'info');
+                return;
+            }
+            label = unsent + ' unsent participant(s)';
+            targetCount = unsent;
+        }
+
+        if (!confirm('Send emails to ' + label + '?\n\nEmails will be sent in batches to avoid timeouts.')) return;
+
         // Show progress modal
         var modal = document.getElementById('emailProgressModal');
         var progressBar = document.getElementById('emailProgressBar');
         var progressText = document.getElementById('emailProgressText');
         var progressDetail = document.getElementById('emailProgressDetail');
         var closeBtn = document.getElementById('emailProgressClose');
+        var stopBtn = document.getElementById('emailProgressStop');
         modal.style.display = 'flex';
         closeBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
         progressBar.style.width = '0%';
-        progressText.textContent = 'Starting...';
+        progressBar.style.background = 'var(--primary)';
+        progressText.textContent = 'Connecting to email server...';
         progressDetail.textContent = '';
-        
-        var totalSent = 0;
+
+        var stopped = false;
         var totalErrors = 0;
-        
+
+        window._stopBatchEmails = function() {
+            stopped = true;
+            stopBtn.style.display = 'none';
+            progressText.textContent = 'Stopping after current batch...';
+        };
+
+        function doResetAndStart() {
+            if (mode === 'all') {
+                // Reset all email_sent flags first, then start sending
+                progressText.textContent = 'Resetting email status for all participants...';
+                fetch("{{ url_for('send_emails_batch_api', event_id=event.id) }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+                    body: JSON.stringify({ mode: 'reset_all' })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        progressText.textContent = 'Reset done. Sending emails...';
+                        setTimeout(sendNextBatch, 200);
+                    } else {
+                        progressText.textContent = 'Error: ' + (data.message || 'Reset failed');
+                        closeBtn.style.display = 'inline-block';
+                        stopBtn.style.display = 'none';
+                    }
+                })
+                .catch(function(err) {
+                    progressText.textContent = 'Error: ' + err.message;
+                    closeBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
+                });
+            } else {
+                sendNextBatch();
+            }
+        }
+
         function sendNextBatch() {
+            if (stopped) {
+                progressBar.style.background = '#f59e0b';
+                progressText.textContent = 'Stopped by user.';
+                closeBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+                return;
+            }
+
+            var payload = { batch_size: 5, mode: mode };
+            if (mode === 'selected') {
+                payload.participant_ids = selectedIds;
+                payload.mode = 'selected';
+            }
+
             fetch("{{ url_for('send_emails_batch_api', event_id=event.id) }}", {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-                body: JSON.stringify({ 
-                    participant_ids: selectedIds.length ? selectedIds : [],
-                    batch_size: 5
-                })
+                body: JSON.stringify(payload)
             })
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || 'Server error ' + r.status); });
+                return r.json();
+            })
             .then(function(data) {
                 if (!data.success) {
                     progressText.textContent = 'Error: ' + (data.message || 'Unknown error');
                     progressBar.style.background = '#ef4444';
                     closeBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
                     return;
                 }
-                
-                totalSent = data.total_sent;
+
                 totalErrors += (data.errors_this_batch || 0);
-                var pct = data.total > 0 ? Math.round((totalSent / data.total) * 100) : 100;
+                var pct = data.total > 0 ? Math.round((data.total_sent / data.total) * 100) : 100;
                 progressBar.style.width = pct + '%';
-                progressText.textContent = totalSent + ' / ' + data.total + ' emails sent';
-                
-                if (totalErrors > 0) {
-                    progressDetail.textContent = totalErrors + ' error(s) encountered';
-                }
-                
+                progressText.textContent = data.total_sent + ' / ' + data.total + ' emails sent';
+
+                var details = [];
+                if (data.remaining > 0) details.push(data.remaining + ' remaining');
+                if (totalErrors > 0) details.push(totalErrors + ' failed');
+                if (data.sent_this_batch > 0) details.push('Batch: +' + data.sent_this_batch);
+                progressDetail.textContent = details.join('  •  ');
+
                 if (data.done) {
                     progressBar.style.width = '100%';
-                    progressBar.style.background = '#16a34a';
-                    progressText.textContent = 'Done! ' + totalSent + ' / ' + data.total + ' emails sent.';
+                    progressBar.style.background = totalErrors > 0 ? '#f59e0b' : '#16a34a';
+                    progressText.textContent = 'Done! ' + data.total_sent + ' / ' + data.total + ' emails sent.';
                     if (totalErrors > 0) {
                         progressDetail.textContent = totalErrors + ' failed. Check email configuration.';
+                    } else {
+                        progressDetail.textContent = 'All emails sent successfully!';
                     }
                     closeBtn.style.display = 'inline-block';
+                    stopBtn.style.display = 'none';
                 } else {
-                    // Continue with next batch
-                    setTimeout(sendNextBatch, 300);
+                    // Small delay then continue
+                    setTimeout(sendNextBatch, 200);
                 }
             })
             .catch(function(err) {
-                progressText.textContent = 'Network error: ' + err.message;
+                progressText.textContent = 'Error: ' + err.message;
+                progressDetail.textContent = 'Check your email configuration and try again.';
                 progressBar.style.background = '#ef4444';
                 closeBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
             });
         }
-        
-        sendNextBatch();
+
+        doResetAndStart();
     };
-    
+
     window.closeEmailProgress = function() {
         document.getElementById('emailProgressModal').style.display = 'none';
         location.reload();
@@ -904,14 +1013,19 @@
     <div style="background:white;border-radius:1rem;padding:2rem;max-width:480px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
         <i class="bi bi-envelope-paper" style="font-size:2.5rem;color:var(--primary);"></i>
         <h5 class="fw-bold mt-2 mb-3">Sending Emails</h5>
-        <div style="background:#e5e7eb;border-radius:999px;height:12px;overflow:hidden;margin-bottom:1rem;">
+        <div style="background:#e5e7eb;border-radius:999px;height:14px;overflow:hidden;margin-bottom:1rem;">
             <div id="emailProgressBar" style="height:100%;width:0%;background:var(--primary);border-radius:999px;transition:width 0.3s ease;"></div>
         </div>
-        <p id="emailProgressText" class="mb-1 fw-semibold" style="font-size:0.9rem;">Starting...</p>
+        <p id="emailProgressText" class="mb-1 fw-semibold" style="font-size:0.95rem;">Connecting to email server...</p>
         <p id="emailProgressDetail" class="text-muted mb-3" style="font-size:0.8rem;"></p>
-        <button id="emailProgressClose" class="btn btn-primary" style="display:none;" onclick="closeEmailProgress()">
-            <i class="bi bi-check-lg me-1"></i>Done
-        </button>
+        <div class="d-flex justify-content-center gap-2">
+            <button id="emailProgressStop" class="btn btn-outline-danger" style="display:none;" onclick="_stopBatchEmails()">
+                <i class="bi bi-stop-circle me-1"></i>Stop
+            </button>
+            <button id="emailProgressClose" class="btn btn-primary" style="display:none;" onclick="closeEmailProgress()">
+                <i class="bi bi-check-lg me-1"></i>Done
+            </button>
+        </div>
     </div>
 </div>
 {% endblock %}
