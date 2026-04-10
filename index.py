@@ -321,65 +321,91 @@ def test_email_connection():
         print(f"❌ Email connection test failed: {str(e)}")
         return False
 
-def send_ticket_email(participant, event):
-    """Send individual ticket email to a participant."""
+def _build_ticket_message(participant, event):
+    """Build email Message object for a participant ticket (no sending)."""
+    subject = f"Registration Confirmation - Your Ticket for {event.name}"
+    calendar_url = generate_google_calendar_url(event, participant)
+
+    msg = Message(
+        subject=subject,
+        sender=app.config['MAIL_DEFAULT_SENDER'],
+        recipients=[participant.email],
+        html=render_template('email/ticket_email.html',
+                             event=event,
+                             participant=participant,
+                             calendar_url=calendar_url)
+    )
+
+    # Attach .ics calendar file (non-critical)
     try:
-        print(f"🚀 Preparing email for {participant.email}")
-        
-        # Validate email configuration
-        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
-        missing_configs = [config for config in required_configs if not app.config.get(config)]
-        
-        if missing_configs:
-            error_msg = f"Missing email configuration: {', '.join(missing_configs)}"
-            print(f"❌ {error_msg}")
-            raise Exception(error_msg)
-        
-        subject = f"Registration Confirmation - Your Ticket for {event.name}"
-        
-        # Generate Google Calendar URL
-        calendar_url = generate_google_calendar_url(event, participant)
-        
-        # Create message with explicit sender
-        msg = Message(
-            subject=subject,
-            sender=app.config['MAIL_DEFAULT_SENDER'],
-            recipients=[participant.email],
-            html=render_template('email/ticket_email.html', 
-                               event=event, 
-                               participant=participant,
-                               calendar_url=calendar_url)
+        ics_content = generate_ics_content(event, participant)
+        msg.attach(
+            f"{event.name.replace(' ', '_')}_ticket.ics",
+            "text/calendar",
+            ics_content
         )
-        
-        # Attach .ics calendar file
-        try:
-            ics_content = generate_ics_content(event, participant)
-            msg.attach(
-                f"{event.name.replace(' ', '_')}_ticket.ics",
-                "text/calendar",
-                ics_content
-            )
-        except Exception as ics_err:
-            print(f"⚠️ Could not attach .ics file: {ics_err}")
-        
-        print(f"📧 Sending email to {participant.email}")
-        print(f"🔗 SMTP: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
-        
-        # Send email
-        mail.send(msg)
-        print(f"✅ Email sent successfully to {participant.email}")
-        
-        # Mark email as sent
+    except Exception:
+        pass  # calendar attachment is optional
+
+    return msg
+
+
+def send_ticket_email(participant, event, connection=None):
+    """Send individual ticket email. Optionally reuse an open SMTP connection."""
+    try:
+        # Validate config once
+        required_configs = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_DEFAULT_SENDER']
+        missing_configs = [c for c in required_configs if not app.config.get(c)]
+        if missing_configs:
+            raise Exception(f"Missing email config: {', '.join(missing_configs)}")
+
+        msg = _build_ticket_message(participant, event)
+
+        # Send via existing connection or create a new one
+        if connection:
+            connection.send(msg)
+        else:
+            mail.send(msg)
+
+        # Mark sent (caller should commit in bulk)
         participant.email_sent = True
         participant.email_sent_date = datetime.now(timezone.utc)
-        db.session.commit()
-        
         return True
-        
+
     except Exception as e:
-        print(f"❌ Failed to send email to {participant.email}: {str(e)}")
-        print(f"🔍 Error type: {type(e).__name__}")
+        print(f"Failed to send email to {participant.email}: {e}")
         return False
+
+
+def send_emails_batch(participants, event, on_progress=None):
+    """Send emails to a list of participants using a single SMTP connection.
+    
+    Returns (sent_count, error_count, errors_list).
+    Uses Flask-Mail's connection context manager to keep one SMTP session open.
+    Each email is committed to DB immediately after successful send so 
+    progress is never lost even if the process is interrupted.
+    """
+    sent = 0
+    errors = []
+
+    with mail.connect() as conn:
+        for i, participant in enumerate(participants):
+            try:
+                success = send_ticket_email(participant, event, connection=conn)
+                if success:
+                    # Commit this participant's email_sent=True immediately
+                    db.session.commit()
+                    sent += 1
+                else:
+                    errors.append(f"{participant.email}: send returned False")
+            except Exception as e:
+                db.session.rollback()
+                errors.append(f"{participant.email}: {str(e)}")
+
+            if on_progress:
+                on_progress(i + 1, sent, len(errors))
+
+    return sent, len(errors), errors
 
 
 def generate_google_calendar_url(event, participant=None):
@@ -2589,6 +2615,7 @@ def event_dashboard(event_id):
         'checked_in': checked_in,
         'pending': total_count - checked_in,
         'emails_sent': emails_sent,
+        'emails_unsent': total_count - emails_sent,
         'certificates_issued': certificates_issued,
         'filtered_total': pagination.total,  # total matching current filter
         'page': page,
@@ -2707,36 +2734,23 @@ def bulk_resend_tickets_alt():
         flash('No participants selected for ticket resend!', 'warning')
         return redirect(request.referrer or url_for('index'))
     
-    # Check if mail is configured
     if not app.config.get('MAIL_USERNAME'):
         flash('Email not configured. Please set up email settings in environment variables.', 'error')
         return redirect(request.referrer or url_for('index'))
     
-    # Test connection first
-    try:
-        test_email_connection()
-        print("Email connection test passed for bulk resend")
-    except Exception as e:
-        flash(f'Email connection failed: {str(e)}', 'error')
-        return redirect(request.referrer or url_for('index'))
-    
-    sent_count = 0
-    error_count = 0
-    event_id = None
+    ids_int = [int(pid) for pid in participant_ids if str(pid).isdigit()]
+    participants = Participant.query.filter(Participant.id.in_(ids_int)).all()
+    event_id = participants[0].event_id if participants else None
+    event = Event.query.get(event_id) if event_id else None
 
-    for pid in participant_ids:
-        try:
-            participant = Participant.query.get(pid)
-            if participant:
-                if not event_id:
-                    event_id = participant.event_id
-                
-                send_ticket_email(participant, participant.event)
-                sent_count += 1
-                
-        except Exception as e:
-            error_count += 1
-            print(f"Error sending ticket to participant {pid}: {e}")
+    if participants and event:
+        # Reset email_sent so send_emails_batch picks them up
+        for p in participants:
+            p.email_sent = False
+        db.session.commit()
+        sent_count, error_count, _ = send_emails_batch(participants, event)
+    else:
+        sent_count, error_count = 0, 0
     
     if sent_count > 0:
         flash(f'Tickets resent to {sent_count} participants!', 'success')
@@ -2968,65 +2982,99 @@ def event_stats_api(event_id):
 @app.route('/api/event/<int:event_id>/send_emails_batch', methods=['POST'])
 @require_admin
 def send_emails_batch_api(event_id):
-    """Send emails in small batches to avoid Vercel timeout. Called repeatedly from frontend."""
+    """Send emails in small batches via a single SMTP connection per call.
+    
+    Called repeatedly from the frontend.  Each call sends up to `batch_size`
+    emails (default 5, max 10) using one kept-alive SMTP session.  The
+    frontend keeps calling until `done` is True.
+    
+    Modes:
+      - 'unsent'   : only participants who haven't received email yet (default)
+      - 'selected' : only the given participant_ids (skips already-sent)
+      - 'all'      : ALL participants (resets email_sent first on first call)
+      - 'reset_all': just resets all email_sent flags, no sending
+    """
     try:
         event = Event.query.get_or_404(event_id)
         data = request.get_json() or {}
-        
-        # Get participant IDs to send to (or all unsent)
+
         participant_ids = data.get('participant_ids', [])
-        batch_size = min(data.get('batch_size', 5), 10)  # Max 10 per batch for safety
-        
-        if not app.config.get('MAIL_USERNAME'):
-            return jsonify({'success': False, 'message': 'Email not configured'}), 400
-        
-        if participant_ids:
-            participants = Participant.query.filter(
-                Participant.id.in_([int(pid) for pid in participant_ids]),
-                Participant.event_id == event_id,
+        batch_size = min(data.get('batch_size', 5), 10)
+        mode = data.get('mode', 'unsent')
+
+        # ── Pre-flight checks ──────────────────────────────────────
+        if not app.config.get('MAIL_USERNAME') and mode != 'reset_all':
+            return jsonify({'success': False, 'message': 'Email not configured. Set MAIL_USERNAME in env.'}), 400
+
+        base_q = Participant.query.filter_by(event_id=event_id)
+
+        # ── Handle reset_all mode (called once before 'all' sends) ─
+        if mode == 'reset_all':
+            base_q.update({Participant.email_sent: False, Participant.email_sent_date: None}, synchronize_session=False)
+            db.session.commit()
+            total = base_q.count()
+            return jsonify({
+                'success': True, 'done': False,
+                'sent_this_batch': 0, 'total_sent': 0,
+                'total': total, 'remaining': total,
+                'message': 'Reset complete. Starting send...'
+            })
+
+        # ── Build query for this batch ─────────────────────────────
+        if mode == 'selected' and participant_ids:
+            ids_int = [int(pid) for pid in participant_ids]
+            batch_q = base_q.filter(
+                Participant.id.in_(ids_int),
                 Participant.email_sent == False
-            ).limit(batch_size).all()
+            )
         else:
-            # Send to all unsent participants
-            participants = Participant.query.filter_by(
-                event_id=event_id, email_sent=False
-            ).limit(batch_size).all()
-        
+            # 'unsent' and 'all' both query email_sent=False
+            # ('all' relies on reset_all being called first)
+            batch_q = base_q.filter(Participant.email_sent == False)
+
+        participants = batch_q.order_by(Participant.id.asc()).limit(batch_size).all()
+
+        # ── Counts ─────────────────────────────────────────────────
+        if mode == 'selected' and participant_ids:
+            ids_int = [int(pid) for pid in participant_ids]
+            total_target = base_q.filter(Participant.id.in_(ids_int)).count()
+            total_sent = base_q.filter(Participant.id.in_(ids_int), Participant.email_sent == True).count()
+        else:
+            total_target = base_q.count()
+            total_sent = base_q.filter(Participant.email_sent == True).count()
+
         if not participants:
-            # Count how many were already sent
-            total_sent = Participant.query.filter_by(event_id=event_id, email_sent=True).count()
-            total = Participant.query.filter_by(event_id=event_id).count()
             return jsonify({
                 'success': True, 'done': True,
-                'sent_this_batch': 0, 'total_sent': total_sent, 'total': total,
-                'message': f'All emails sent! ({total_sent}/{total})'
+                'sent_this_batch': 0, 'total_sent': total_sent,
+                'total': total_target,
+                'remaining': total_target - total_sent,
+                'message': f'All done! {total_sent}/{total_target} emails sent.'
             })
-        
-        sent_count = 0
-        errors = []
-        for participant in participants:
-            try:
-                send_ticket_email(participant, event)
-                sent_count += 1
-            except Exception as e:
-                errors.append(f"{participant.email}: {str(e)}")
-        
-        # Get updated counts
-        total_sent = Participant.query.filter_by(event_id=event_id, email_sent=True).count()
-        total = Participant.query.filter_by(event_id=event_id).count()
-        remaining = total - total_sent
-        
+
+        # ── Send batch using a single SMTP connection ──────────────
+        sent_count, error_count, error_list = send_emails_batch(participants, event)
+
+        # Refresh counts after send
+        if mode == 'selected' and participant_ids:
+            total_sent = base_q.filter(Participant.id.in_(ids_int), Participant.email_sent == True).count()
+        else:
+            total_sent = base_q.filter(Participant.email_sent == True).count()
+        remaining = total_target - total_sent
+
         return jsonify({
             'success': True,
             'done': remaining == 0,
             'sent_this_batch': sent_count,
-            'errors_this_batch': len(errors),
+            'errors_this_batch': error_count,
             'total_sent': total_sent,
-            'total': total,
+            'total': total_target,
             'remaining': remaining,
-            'errors': errors[:5]  # Only return first 5 errors
+            'errors': error_list[:5]
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -3057,43 +3105,23 @@ def send_emails(event_id):
         if not participants:
             flash('No participants found to send emails to!', 'warning')
             return redirect(url_for('event_dashboard', event_id=event_id))
-            
-        # Check if mail is configured
+
         if not app.config.get('MAIL_USERNAME'):
             flash('Email not configured. Please set up email settings in environment variables.', 'error')
             return redirect(url_for('event_dashboard', event_id=event_id))
-            
-        # Test email connection first
-        try:
-            test_email_connection()
-            print("Email connection test passed")
-        except Exception as e:
-            print(f"Email connection test failed: {str(e)}")
-            flash(f'Email connection failed: {str(e)}', 'error')
-            return redirect(url_for('event_dashboard', event_id=event_id))
-            
-        sent_count = 0
-        error_count = 0
-        
-        for participant in participants:
-            try:
-                send_ticket_email(participant, event)
-                sent_count += 1
-                print(f"✅ Email sent to {participant.email}")
-            except Exception as e:
-                error_count += 1
-                print(f"❌ Error sending email to {participant.email}: {e}")
-        
+
+        sent_count, error_count, _ = send_emails_batch(participants, event)
+
         target = f"{len(selected_ids)} selected" if selected_ids else "all"
         if sent_count > 0:
             flash(f'Emails sent successfully to {sent_count} of {target} participants!', 'success')
         if error_count > 0:
             flash(f'Failed to send {error_count} emails. Check email configuration.', 'warning')
-            
+
     except Exception as e:
         flash(f'Error sending emails: {str(e)}', 'error')
         print(f"Email error: {e}")
-    
+
     return redirect(url_for('event_dashboard', event_id=event_id))
 
 @app.route('/debug/email-config')
@@ -3400,18 +3428,18 @@ def bulk_resend_tickets():
         flash('No participants selected for resending tickets.', 'warning')
         return redirect(request.referrer or url_for('index'))
     
-    success_count = 0
-    error_count = 0
+    ids_int = [int(pid) for pid in selected_participants if str(pid).isdigit()]
+    participants = Participant.query.filter(Participant.id.in_(ids_int)).all()
+    event = participants[0].event if participants else None
     
-    for participant_id in selected_participants:
-        try:
-            participant = Participant.query.get(participant_id)
-            if participant:
-                send_ticket_email(participant, participant.event)
-                success_count += 1
-        except Exception as e:
-            error_count += 1
-            print(f"? Failed to resend ticket to participant {participant_id}: {str(e)}")
+    if participants and event:
+        # Reset email_sent so send_emails_batch picks them up
+        for p in participants:
+            p.email_sent = False
+        db.session.commit()
+        success_count, error_count, _ = send_emails_batch(participants, event)
+    else:
+        success_count, error_count = 0, 0
     
     if success_count > 0:
         flash(f'Successfully resent {success_count} tickets!', 'success')
