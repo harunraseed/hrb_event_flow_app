@@ -870,6 +870,15 @@ class Event(db.Model):
 
 class Participant(db.Model):
     __tablename__ = 'participants'
+    __table_args__ = (
+        db.Index('ix_participants_event_id', 'event_id'),
+        db.Index('ix_participants_event_checkin', 'event_id', 'checked_in'),
+        db.Index('ix_participants_event_email_sent', 'event_id', 'email_sent'),
+        db.Index('ix_participants_event_delivery_status', 'event_id', 'email_delivery_status'),
+        db.Index('ix_participants_event_created', 'event_id', 'created_at'),
+        db.Index('ix_participants_name_trgm', 'name'),
+        db.Index('ix_participants_email_trgm', 'email'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=False)
     name = db.Column(db.String(200), nullable=False)
@@ -911,7 +920,15 @@ class Participant(db.Model):
             'spam':        ('Spam', 'danger', 'shield-exclamation'),
             'error':       ('Error', 'danger', 'exclamation-circle'),
         }
-        status = self.email_delivery_status or ('sent' if self.email_sent else 'pending')
+        # Derive effective status: use delivery_status if it has progressed
+        # beyond 'pending', otherwise fall back to email_sent flag
+        ds = self.email_delivery_status
+        if ds and ds != 'pending':
+            status = ds
+        elif self.email_sent:
+            status = 'sent'
+        else:
+            status = 'pending'
         label, color, icon = status_map.get(status, ('Unknown', 'muted', 'question-circle'))
         return {'label': label, 'color': color, 'icon': icon, 'status': status}
 
@@ -2660,32 +2677,42 @@ def event_dashboard(event_id):
     )
     participants = pagination.items
 
-    # Use efficient DB aggregate queries for global stats (across ALL participants, not just current page)
-    base_q = Participant.query.filter_by(event_id=event_id)
-    total_count = base_q.count()
-    checked_in = base_q.filter(Participant.checked_in == True).count()
-    emails_sent = base_q.filter(Participant.email_sent == True).count()
-    certificates_issued = db.session.query(db.func.count(db.distinct(Certificate.participant_id))).filter(
-        Certificate.event_id == event_id
-    ).scalar() or 0
+    # ── Single aggregate query for ALL stats (replaces 9+ separate COUNT queries) ──
+    P = Participant
+    agg = db.session.query(
+        db.func.count(P.id).label('total'),
+        db.func.count(db.case((P.checked_in == True, 1))).label('checked_in'),
+        db.func.count(db.case((P.email_sent == True, 1))).label('emails_sent'),
+        # Brevo delivery funnel
+        db.func.count(db.case((P.email_delivery_status.in_(['delivered', 'opened', 'clicked']), 1))).label('delivered'),
+        db.func.count(db.case((P.email_delivery_status.in_(['opened', 'clicked']), 1))).label('opened'),
+        db.func.count(db.case((P.email_delivery_status == 'clicked', 1))).label('clicked'),
+        db.func.count(db.case((P.email_delivery_status.in_(['soft_bounce', 'hard_bounce']), 1))).label('bounced'),
+        db.func.count(db.case((P.email_delivery_status == 'spam', 1))).label('spam'),
+    ).filter(P.event_id == event_id).one()
 
-    # Brevo-specific tracking stats (cheap COUNT queries, only when Brevo is active)
+    # Certificate count (separate table, still just 1 query)
+    certificates_issued = db.session.query(
+        db.func.count(db.distinct(Certificate.participant_id))
+    ).filter(Certificate.event_id == event_id).scalar() or 0
+
+    total_count = agg.total
     brevo_stats = {}
     if IS_BREVO_SMTP:
         brevo_stats = {
-            'delivered': base_q.filter(Participant.email_delivery_status.in_(['delivered', 'opened', 'clicked'])).count(),
-            'opened': base_q.filter(Participant.email_delivery_status.in_(['opened', 'clicked'])).count(),
-            'clicked': base_q.filter(Participant.email_delivery_status == 'clicked').count(),
-            'bounced': base_q.filter(Participant.email_delivery_status.in_(['soft_bounce', 'hard_bounce'])).count(),
-            'spam': base_q.filter(Participant.email_delivery_status == 'spam').count(),
+            'delivered': agg.delivered,
+            'opened': agg.opened,
+            'clicked': agg.clicked,
+            'bounced': agg.bounced,
+            'spam': agg.spam,
         }
 
     stats = {
         'total': total_count,
-        'checked_in': checked_in,
-        'pending': total_count - checked_in,
-        'emails_sent': emails_sent,
-        'emails_unsent': total_count - emails_sent,
+        'checked_in': agg.checked_in,
+        'pending': total_count - agg.checked_in,
+        'emails_sent': agg.emails_sent,
+        'emails_unsent': total_count - agg.emails_sent,
         'certificates_issued': certificates_issued,
         'filtered_total': pagination.total,  # total matching current filter
         'page': page,
@@ -3165,30 +3192,33 @@ def brevo_webhook():
 def email_tracking_stats_api(event_id):
     """Get aggregated email tracking stats for an event (Brevo-enhanced)."""
     try:
-        base_q = Participant.query.filter_by(event_id=event_id)
-        total = base_q.count()
-        sent = base_q.filter(Participant.email_sent == True).count()
-        
-        # Brevo-specific detailed stats
-        delivered = base_q.filter(Participant.email_delivery_status.in_(['delivered', 'opened', 'clicked'])).count()
-        opened = base_q.filter(Participant.email_delivery_status.in_(['opened', 'clicked'])).count()
-        clicked = base_q.filter(Participant.email_delivery_status == 'clicked').count()
-        bounced = base_q.filter(Participant.email_delivery_status.in_(['soft_bounce', 'hard_bounce'])).count()
-        spam = base_q.filter(Participant.email_delivery_status == 'spam').count()
+        P = Participant
+        agg = db.session.query(
+            db.func.count(P.id).label('total'),
+            db.func.count(db.case((P.email_sent == True, 1))).label('sent'),
+            db.func.count(db.case((P.email_delivery_status.in_(['delivered', 'opened', 'clicked']), 1))).label('delivered'),
+            db.func.count(db.case((P.email_delivery_status.in_(['opened', 'clicked']), 1))).label('opened'),
+            db.func.count(db.case((P.email_delivery_status == 'clicked', 1))).label('clicked'),
+            db.func.count(db.case((P.email_delivery_status.in_(['soft_bounce', 'hard_bounce']), 1))).label('bounced'),
+            db.func.count(db.case((P.email_delivery_status == 'spam', 1))).label('spam'),
+        ).filter(P.event_id == event_id).one()
+
+        total = agg.total
+        sent = agg.sent
 
         return jsonify({
             'success': True,
             'is_brevo': IS_BREVO_SMTP,
             'total': total,
             'sent': sent,
-            'delivered': delivered,
-            'opened': opened,
-            'clicked': clicked,
-            'bounced': bounced,
-            'spam': spam,
-            'open_rate': round((opened / sent * 100), 1) if sent > 0 else 0,
-            'delivery_rate': round((delivered / sent * 100), 1) if sent > 0 else 0,
-            'bounce_rate': round((bounced / sent * 100), 1) if sent > 0 else 0,
+            'delivered': agg.delivered,
+            'opened': agg.opened,
+            'clicked': agg.clicked,
+            'bounced': agg.bounced,
+            'spam': agg.spam,
+            'open_rate': round((agg.opened / sent * 100), 1) if sent > 0 else 0,
+            'delivery_rate': round((agg.delivered / sent * 100), 1) if sent > 0 else 0,
+            'bounce_rate': round((agg.bounced / sent * 100), 1) if sent > 0 else 0,
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -3248,6 +3278,57 @@ def migrate_email_tracking():
             'is_brevo': IS_BREVO_SMTP
         })
     except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/admin/migrate/indexes')
+@require_superadmin
+def migrate_indexes():
+    """Create performance indexes on participants table.
+    Safe to run multiple times — uses IF NOT EXISTS.
+    """
+    indexes = [
+        ('ix_participants_event_id',              'participants', 'event_id'),
+        ('ix_participants_event_checkin',          'participants', 'event_id, checked_in'),
+        ('ix_participants_event_email_sent',       'participants', 'event_id, email_sent'),
+        ('ix_participants_event_delivery_status',  'participants', 'event_id, email_delivery_status'),
+        ('ix_participants_event_created',          'participants', 'event_id, created_at'),
+        ('ix_participants_name_trgm',              'participants', 'name'),
+        ('ix_participants_email_trgm',             'participants', 'email'),
+        ('ix_certificates_event_participant',      'certificates', 'event_id, participant_id'),
+    ]
+    created = []
+    skipped = []
+    try:
+        with db.engine.connect() as conn:
+            for idx_name, table, columns in indexes:
+                try:
+                    conn.execute(db.text(
+                        f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({columns})'
+                    ))
+                    created.append(idx_name)
+                except Exception as e:
+                    if 'already exists' in str(e).lower():
+                        skipped.append(idx_name)
+                    else:
+                        skipped.append(f'{idx_name}: {e}')
+            conn.commit()
+
+        # Also backfill email_delivery_status for already-sent emails
+        updated = Participant.query.filter(
+            Participant.email_sent == True,
+            db.or_(Participant.email_delivery_status == None, Participant.email_delivery_status == 'pending')
+        ).update({Participant.email_delivery_status: 'sent'}, synchronize_session=False)
+        db.session.commit()
+
+        return jsonify({
+            'status': 'success',
+            'indexes_created': created,
+            'indexes_skipped': skipped,
+            'email_status_backfilled': updated,
+        })
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
